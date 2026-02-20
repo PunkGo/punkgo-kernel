@@ -1,0 +1,38 @@
+[workspace]
+members = [
+    "bins/punkgo-cli",
+    "bins/punkgo-kerneld",
+    "crates/punkgo-audit",
+    "crates/punkgo-core",
+    "crates/punkgo-testkit",
+    "crates/punkgo-state",
+    "crates/punkgo-sandbox",
+    "crates/punkgo-runtime",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["Felix <feijiu@punkgo.ai>"]
+license = "MIT"
+repository = "https://github.com/PunkGo/punkgo-kernel"
+homepage = "https://punkgo.ai"
+rust-version = "1.85"
+
+[workspace.dependencies]
+anyhow = "1.0.101"
+async-trait = "0.1"
+tlog_tiles = "0.2.0"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+sha2 = "0.10.9"
+sqlx = { version = "0.8.6", features = ["sqlite", "runtime-tokio-rustls"] }
+thiserror = "2.0.18"
+tokio = { version = "1.49.0", features = ["full"] }
+tracing = "0.1.44"
+tracing-subscriber = "0.3.22"
+globset = "0.4"
+toml = "0.8"
+tempfile = "3.16"
+uuid = { version = "1.21.0", features = ["v4", "serde"] }

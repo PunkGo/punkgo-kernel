@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Build binaries
+        run: cargo build --release --target ${{ matrix.target }} --bin punkgo-cli --bin punkgo-kerneld
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../punkgo-kernel-${{ github.ref_name }}-${{ matrix.target }}.tar.gz punkgo-cli punkgo-kerneld
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../punkgo-kernel-${{ github.ref_name }}-${{ matrix.target }}.tar.gz punkgo-cli punkgo-kerneld
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cd target/${{ matrix.target }}/release
+          7z a ../../../punkgo-kernel-${{ github.ref_name }}-${{ matrix.target }}.zip punkgo-cli.exe punkgo-kerneld.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: punkgo-kernel-${{ github.ref_name }}-*
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            punkgo-kernel-*.tar.gz
+            punkgo-kernel-*.zip
+          draft: false
+          prerelease: false

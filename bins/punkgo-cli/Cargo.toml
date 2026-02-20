@@ -1,0 +1,14 @@
+[package]
+name = "punkgo-cli"
+description = "PunkGo CLI client: submit actions, query state, and verify audit proofs"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+serde_json.workspace = true
+uuid.workspace = true

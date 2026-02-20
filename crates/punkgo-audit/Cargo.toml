@@ -1,0 +1,17 @@
+[package]
+name = "punkgo-audit"
+description = "PunkGo cryptographic audit trail: Merkle tree, inclusion/consistency proofs, C2SP checkpoints"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tlog_tiles.workspace = true
+tracing.workspace = true
