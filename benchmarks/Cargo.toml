@@ -1,0 +1,71 @@
+[package]
+name = "punkgo-benchmarks"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+
+[workspace]
+
+[[bin]]
+name = "environment"
+path = "src/bin/environment.rs"
+
+[[bin]]
+name = "inv1_append_only"
+path = "src/bin/inv1_append_only.rs"
+
+[[bin]]
+name = "inv2_completeness"
+path = "src/bin/inv2_completeness.rs"
+
+[[bin]]
+name = "inv3_integrity"
+path = "src/bin/inv3_integrity.rs"
+
+[[bin]]
+name = "inv4_boundary"
+path = "src/bin/inv4_boundary.rs"
+
+[[bin]]
+name = "inv5_energy"
+path = "src/bin/inv5_energy.rs"
+
+[[bin]]
+name = "pipeline_latency"
+path = "src/bin/pipeline_latency.rs"
+
+[[bin]]
+name = "merkle_performance"
+path = "src/bin/merkle_performance.rs"
+
+[[bin]]
+name = "throughput"
+path = "src/bin/throughput.rs"
+
+[[bin]]
+name = "hold_latency"
+path = "src/bin/hold_latency.rs"
+
+[[bin]]
+name = "aios_comparison"
+path = "src/bin/aios_comparison.rs"
+
+[[bin]]
+name = "summary"
+path = "src/bin/summary.rs"
+
+[dependencies]
+punkgo-runtime = { path = "../crates/punkgo-runtime" }
+punkgo-core = { path = "../crates/punkgo-core" }
+punkgo-audit = { path = "../crates/punkgo-audit" }
+punkgo-testkit = { path = "../crates/punkgo-testkit" }
+punkgo-state = { path = "../crates/punkgo-state" }
+
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+tokio = { version = "1.49.0", features = ["full"] }
+sha2 = "0.10.9"
+sqlx = { version = "0.8.6", features = ["sqlite", "runtime-tokio-rustls"] }
+uuid = { version = "1.21.0", features = ["v4"] }
+chrono = "0.4"
