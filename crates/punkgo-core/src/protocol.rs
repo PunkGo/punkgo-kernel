@@ -37,11 +37,25 @@ impl ResponseEnvelope {
         }
     }
 
+    /// Create an error response from a `KernelError` with structured payload.
+    pub fn err_structured(request_id: String, error: &crate::errors::KernelError) -> Self {
+        Self {
+            request_id,
+            status: "error".to_string(),
+            payload: error.to_error_payload(),
+        }
+    }
+
+    /// Create an error response from a plain string (for non-KernelError cases
+    /// like JSON parse failures at the IPC layer).
     pub fn err(request_id: String, message: String) -> Self {
         Self {
             request_id,
             status: "error".to_string(),
-            payload: serde_json::json!({ "error": message }),
+            payload: serde_json::json!({
+                "error_type": "Unknown",
+                "message": message,
+            }),
         }
     }
 }

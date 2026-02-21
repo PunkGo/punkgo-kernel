@@ -89,17 +89,12 @@ async fn grant_envelope_with_hold(
     );
 }
 
-/// Extract `hold_id` from a "hold triggered" error payload string.
+/// Extract `hold_id` from a structured HoldTriggered error payload.
 fn extract_hold_id(payload: &serde_json::Value) -> String {
-    // The error string is: "hold triggered: hold_id=<uuid>, agent=<agent_id>"
-    let binding = payload.to_string();
-    let s = payload.as_str().unwrap_or(&binding);
-    let s = s.trim_matches('"');
-    s.split("hold_id=")
-        .nth(1)
-        .and_then(|rest| rest.split(',').next())
-        .map(|id| id.trim().to_string())
-        .unwrap_or_else(|| panic!("could not extract hold_id from: {s}"))
+    payload["hold_id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("missing hold_id in payload: {payload}"))
+        .to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -150,12 +145,12 @@ async fn hold_triggered_on_matching_action() {
         resp.payload
     );
     assert!(
-        resp.payload.to_string().contains("hold triggered"),
+        resp.payload["error_type"] == "HoldTriggered",
         "error should mention hold triggered: {}",
         resp.payload
     );
     assert!(
-        resp.payload.to_string().contains("hold_id="),
+        resp.payload["hold_id"].is_string(),
         "error should contain hold_id: {}",
         resp.payload
     );
@@ -290,7 +285,7 @@ async fn agent_can_submit_while_hold_pending() {
         ))
         .await;
     assert_eq!(trigger_resp.status, "error");
-    assert!(trigger_resp.payload.to_string().contains("hold triggered"));
+    assert!(trigger_resp.payload["error_type"] == "HoldTriggered");
 
     // Agent submits a different action to a non-restricted path — should SUCCEED.
     let follow_action = Action {
@@ -982,7 +977,7 @@ async fn hold_on_glob_pattern_matching() {
         nested_resp.payload
     );
     assert!(
-        nested_resp.payload.to_string().contains("hold triggered"),
+        nested_resp.payload["error_type"] == "HoldTriggered",
         "should be hold triggered: {}",
         nested_resp.payload
     );
@@ -1030,7 +1025,7 @@ async fn hold_on_multiple_rules() {
         .await;
     assert_eq!(resp_a.status, "error");
     assert!(
-        resp_a.payload.to_string().contains("hold triggered"),
+        resp_a.payload["error_type"] == "HoldTriggered",
         "rule 1 should trigger hold: {}",
         resp_a.payload
     );
@@ -1339,7 +1334,7 @@ async fn hold_reserves_energy_on_trigger() {
         ))
         .await;
     assert_eq!(resp.status, "error");
-    assert!(resp.payload.to_string().contains("hold triggered"));
+    assert!(resp.payload["error_type"] == "HoldTriggered");
 
     // Energy should now have reserved > 0.
     let (balance_after, reserved_after) = query_energy(&kernel, "reserve-agent").await;
@@ -1555,7 +1550,7 @@ async fn hold_timeout_auto_rejects() {
         ))
         .await;
     assert_eq!(resp.status, "error");
-    assert!(resp.payload.to_string().contains("hold triggered"));
+    assert!(resp.payload["error_type"] == "HoldTriggered");
     let hold_id = extract_hold_id(&resp.payload);
 
     let (_, reserved_mid) = query_energy(&kernel, "timeout-agent").await;
