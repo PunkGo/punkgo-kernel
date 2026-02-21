@@ -130,7 +130,7 @@ async fn main() {
     )
     .await;
     let hold_triggered =
-        hold_resp.status == "error" && hold_resp.payload.to_string().contains("hold triggered");
+        hold_resp.status == "error" && hold_resp.payload["error_type"] == "HoldTriggered";
     let hold_id = if hold_triggered {
         extract_hold_id(&hold_resp.payload)
     } else {

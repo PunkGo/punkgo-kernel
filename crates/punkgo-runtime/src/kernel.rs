@@ -24,7 +24,7 @@ use punkgo_sandbox::{
     load_sandbox_config, run_lifecycle,
 };
 use punkgo_state::{
-    ActorStore, EnergyLedger, EnergyReservation, EnvelopeStore, EventLog, EventRecord,
+    ActorStore, BlobStore, EnergyLedger, EnergyReservation, EnvelopeStore, EventLog, EventRecord,
     NewHoldRequest, StateStore,
 };
 
@@ -105,6 +105,7 @@ pub struct Kernel {
     backend_registry: BackendRegistry,
     actor_store: ActorStore,
     envelope_store: EnvelopeStore,
+    blob_store: BlobStore,
     stellar_config: StellarConfig,
     sandbox_config: SandboxConfig,
 }
@@ -124,6 +125,8 @@ impl Kernel {
         backend_registry.register(Arc::new(process_backend));
         let actor_store = ActorStore::new(state_store.pool());
         let envelope_store = EnvelopeStore::new(state_store.pool());
+        let blob_store = BlobStore::new(&state_store.paths().blobs_root);
+        blob_store.bootstrap()?;
 
         // Phase 2: Load stellar configuration (PIP-001 §1).
         let stellar_config_path = config.state_dir.join("stellar.toml");
@@ -151,6 +154,7 @@ impl Kernel {
             backend_registry,
             actor_store,
             envelope_store,
+            blob_store,
             stellar_config,
             sandbox_config,
         })
@@ -197,7 +201,7 @@ impl Kernel {
             }
             Err(err) => {
                 warn!(error = %err, "request failed");
-                ResponseEnvelope::err(request_id, err.to_string())
+                ResponseEnvelope::err_structured(request_id, &err)
             }
         }
     }
@@ -532,6 +536,16 @@ impl Kernel {
         } else {
             None
         };
+
+        // PIP-001 §12: Persist execute output to BlobStore.
+        // The artifact_hash (SHA-256 of stdout||stderr) is already computed by the
+        // sandbox. Here we store the actual content so it can be retrieved later.
+        if let Some(ref run) = execute_result {
+            let combined = format!("{}{}", run.stdout, run.stderr);
+            if let Err(err) = self.blob_store.put(combined.as_bytes()) {
+                warn!(error = %err, "failed to persist execute output to BlobStore");
+            }
+        }
 
         // Step 5: SETTLE
         let settled_cost = self.compute_settled_cost(reserved_cost, execute_result.as_ref());

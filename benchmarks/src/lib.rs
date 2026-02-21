@@ -141,14 +141,12 @@ pub async fn query_energy(kernel: &Kernel, actor_id: &str) -> (i64, i64) {
     )
 }
 
-/// Extract hold_id from a HoldTriggered error payload.
+/// Extract hold_id from a structured HoldTriggered error payload.
 pub fn extract_hold_id(payload: &Value) -> String {
-    let s = payload.to_string();
-    s.split("hold_id=")
-        .nth(1)
-        .and_then(|rest| rest.split(',').next())
-        .map(|id| id.trim().trim_matches('"').to_string())
-        .unwrap_or_else(|| panic!("could not extract hold_id from: {s}"))
+    payload["hold_id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("missing hold_id in payload: {payload}"))
+        .to_string()
 }
 
 /// Build a simple action.

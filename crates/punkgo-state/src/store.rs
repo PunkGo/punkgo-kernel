@@ -15,6 +15,7 @@ pub struct StatePaths {
     pub workspace_root: PathBuf,
     pub quarantine_root: PathBuf,
     pub snapshots_root: PathBuf,
+    pub blobs_root: PathBuf,
     pub db_path: PathBuf,
 }
 
@@ -32,11 +33,13 @@ impl StateStore {
         let quarantine_root = root.join("quarantine");
         let event_log_root = root.join("event_log");
         let snapshots_root = root.join("snapshots");
+        let blobs_root = root.join("blobs");
 
         fs::create_dir_all(&workspace_root)?;
         fs::create_dir_all(&quarantine_root)?;
         fs::create_dir_all(&event_log_root)?;
         fs::create_dir_all(&snapshots_root)?;
+        fs::create_dir_all(&blobs_root)?;
 
         let lock_path = root.join("kernel.lock");
         let lock_file_result = OpenOptions::new()
@@ -76,6 +79,7 @@ impl StateStore {
                 workspace_root,
                 quarantine_root,
                 snapshots_root,
+                blobs_root,
                 db_path,
             },
             _lock_file: lock_file,
