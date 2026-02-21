@@ -5,6 +5,29 @@ All notable changes to PunkGo Kernel will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-02-22
+
+### Added
+
+- **PIP-002: Execute Submission** ([EN](docs/PIP-002_EN.md) | [ZH](docs/PIP-002_ZH.md)) — actor executes externally, kernel validates and records
+- **Execute payload validation** — kernel validates `input_oid`, `output_oid`, `exit_code`, `artifact_hash` format (PIP-002 §2–§3)
+- **IO-based execute cost** — `25 + output_bytes / 256`, replacing payload-size formula (PIP-002 §4)
+- **Benchmark suite** — pipeline_latency, throughput, hold_latency, inv4_boundary, aios_comparison, summary (paper §6 evaluation)
+
+### Changed
+
+- **Submit pipeline step 4** — renamed from "execute" to "validate_payload"; kernel no longer spawns OS processes
+- **Kernel role** — pure committer: validates format + authorization, does not verify OID content or execute commands
+- **`ExecutePayloadInvalid` error** — replaces `Sandbox` error variant for structured error responses
+- **Execute cost formula** — `quote_cost(Execute)` now uses actor-reported `output_bytes` instead of serialized payload size
+
+### Removed
+
+- **`punkgo-sandbox` crate** — removed from workspace; execution is now actor responsibility (PIP-002 §1)
+- **BlobStore dependency in kernel** — kernel no longer manages content storage; actors handle blob lifecycle
+- **`SYSTEM_TIMEOUT_HARD_LIMIT_MS`** — no longer needed without process execution
+- **Sandbox-related kernel fields** — `backend_registry`, `sandbox_config`, `blob_store`
+
 ## [0.1.0] - 2026-02-21
 
 ### Added

@@ -1,6 +1,6 @@
 # PunkGo Kernel
 
-[Website](https://punkgo.ai) | [Whitepaper](docs/PunkGo_Whitepaper_EN.md) | [PIP-001](docs/PIP-001_EN.md)
+[Website](https://punkgo.ai) | [Whitepaper](docs/PunkGo_Whitepaper_EN.md) | [PIP-001](docs/PIP-001_EN.md) | [PIP-002](docs/PIP-002_EN.md)
 
 [![CI](https://github.com/PunkGo/punkgo-kernel/actions/workflows/ci.yml/badge.svg)](https://github.com/PunkGo/punkgo-kernel/actions/workflows/ci.yml)
 
@@ -39,8 +39,7 @@ punkgo-kernel/
   crates/
     punkgo-core/       # Core types: Actor, Energy, Action, Boundary, Consent
     punkgo-runtime/    # Kernel: 7-step submit pipeline, lifecycle, energy producer
-    punkgo-state/      # Persistence: ActorStore, EnergyLedger, EventLog, EnvelopeStore
-    punkgo-sandbox/    # Execution: backend registry, process isolation, circuit breaker
+    punkgo-state/      # Persistence: ActorStore, EnergyLedger, EventLog, EnvelopeStore, BlobStore
     punkgo-audit/      # Audit: Merkle tree, inclusion/consistency proofs, C2SP checkpoints
     punkgo-testkit/    # Test utilities: temp state dirs, request builders
 ```
@@ -50,14 +49,14 @@ punkgo-kernel/
 Every action goes through a **7-step pipeline**:
 
 ```
-validate → quote → reserve → execute → settle → append → receipt
+validate → quote → reserve → validate_payload → settle → append → receipt
 ```
 
 1. **Validate** — check actor status, boundary permissions, action well-formedness
 2. **Quote** — compute energy cost for the action
 3. **Reserve** — lock energy from actor's balance
-4. **Execute** — run the action (process execution for `execute` type)
-5. **Settle** — finalize energy accounting including I/O overhead
+4. **Validate Payload** — for `execute` actions, validate the actor-submitted result (PIP-002 §2)
+5. **Settle** — finalize energy accounting
 6. **Append** — write the committed event to the append-only log with cryptographic hash
 7. **Receipt** — return a verifiable receipt (event ID, log index, event hash)
 
@@ -77,14 +76,21 @@ Energy is produced continuously, anchored to the machine's hardware compute powe
 
 Every actor declares `writable_targets` (glob pattern + action types) at creation time. Access is default-deny. Privileged targets (`system/*`, `ledger/*`) are restricted to root. Child actor boundaries must be a subset of their parent's boundary.
 
-### Execution Backend
+### Execute Submission (PIP-002)
 
-The `execute` action runs through an `ExecutionBackend` trait:
+The kernel is a **committer, not an executor**. For `execute` actions, the actor performs the execution externally and submits the result. The kernel validates the payload format and records the event.
 
-- **ProcessBackend** — current implementation: spawn subprocess, capture output, hash I/O
-- Future backends: Docker, Firecracker (planned)
-- Hard timeout (300s) with circuit-breaker protection
-- Artifact hash (SHA-256) computed before truncation for audit integrity
+The execute payload must contain:
+
+| Field | Format | Description |
+|-------|--------|-------------|
+| `input_oid` | `sha256:<64 hex>` | Reference to serialized input |
+| `output_oid` | `sha256:<64 hex>` | Reference to serialized output |
+| `exit_code` | integer | Process exit code |
+| `artifact_hash` | `sha256:<64 hex>` | SHA-256 of raw output bytes |
+| `output_bytes` | integer (optional) | Output size for IO cost calculation |
+
+Energy cost: `25 + output_bytes / 256`. The kernel does not verify whether OID references point to actual content — it records what the actor claims, consistent with `mutate` behavior.
 
 ### Audit Trail
 
@@ -144,6 +150,7 @@ PunkGo is governed by two documents:
 
 - **PunkGo Whitepaper** ([EN](docs/PunkGo_Whitepaper_EN.md) | [ZH](docs/PunkGo_Whitepaper_ZH.md)) — foundational axioms, world model, and 7 invariants
 - **PIP-001: Action** ([EN](docs/PIP-001_EN.md) | [ZH](docs/PIP-001_ZH.md)) — energy source, actor types, writability boundaries, and hold mechanism (§11)
+- **PIP-002: Execute Submission** ([EN](docs/PIP-002_EN.md) | [ZH](docs/PIP-002_ZH.md)) — actor executes, kernel records (supersedes PIP-001 §12)
 
 All governance changes enter the event history (whitepaper §3, invariant 6).
 
