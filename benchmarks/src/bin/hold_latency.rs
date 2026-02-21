@@ -208,7 +208,7 @@ async fn main() {
             "reject": reject_stats.to_json(),
             "end_to_end_trigger_to_approve_us": end_to_end,
         },
-        "notes": "Each phase uses a fresh kernel instance. Trigger includes: validate + boundary + auth + hold_trigger + atomic(reserve + hold_event + hold_request). Approve includes: validate + hold_lookup + re-execute + settle + 2 events. Does NOT include human decision time."
+        "notes": "Each phase uses a fresh kernel instance. Trigger includes: validate + boundary + auth + hold_trigger + atomic(reserve + hold_event + hold_request). Approve includes: validate + hold_lookup + re-submit + settle + 2 events. Does NOT include human decision time."
     });
 
     write_result("hold_latency.json", &result);

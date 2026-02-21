@@ -107,7 +107,12 @@ async fn main() {
                 "docs-agent",
                 ActionType::Execute,
                 "workspace/docs/script",
-                json!({"command": "echo hi"}),
+                json!({
+                    "input_oid": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "output_oid": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "exit_code": 0,
+                    "artifact_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+                }),
             ),
         )
         .await;

@@ -128,7 +128,7 @@ async fn main() {
                 "throughput": mixed_tps
             }
         },
-        "notes": "Sequential single-writer model (single Committer). SQLite WAL mode. Performance includes validate + quote + reserve + execute + settle + append + post-commit audit + snapshot refresh. Snapshot refresh is O(n) in event count, so throughput degrades over time."
+        "notes": "Sequential single-writer model (single Committer). SQLite WAL mode. Performance includes validate + quote + reserve + payload_validate + settle + append + post-commit audit + snapshot refresh. Snapshot refresh is O(n) in event count, so throughput degrades over time."
     });
 
     write_result("throughput.json", &result);

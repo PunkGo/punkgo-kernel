@@ -6,7 +6,6 @@ members = [
     "crates/punkgo-core",
     "crates/punkgo-testkit",
     "crates/punkgo-state",
-    "crates/punkgo-sandbox",
     "crates/punkgo-runtime",
 ]
 resolver = "2"

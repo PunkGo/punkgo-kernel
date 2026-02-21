@@ -3,7 +3,7 @@
 //! This crate contains the kernel's core logic:
 //!
 //! - [`Kernel`] — bootstraps state, handles requests, and runs the submit pipeline:
-//!   `validate → quote → reserve → execute → settle → append → post-commit`
+//!   `validate → quote → reserve → validate_payload → settle → append → post-commit`
 //! - [`EnergyProducer`] — background task distributing energy per tick,
 //!   anchored to hardware compute power (PIP-001 §1–§2)
 //! - [`lifecycle`] — actor lifecycle operations: freeze, unfreeze, terminate

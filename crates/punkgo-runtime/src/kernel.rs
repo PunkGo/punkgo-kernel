@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -19,12 +18,8 @@ use punkgo_core::policy::{check_read_access, validate_action};
 use crate::lifecycle;
 use punkgo_core::protocol::{RequestEnvelope, RequestType, ResponseEnvelope};
 use punkgo_core::stellar::{StellarConfig, load_stellar_config};
-use punkgo_sandbox::{
-    BackendRegistry, ExecutionEnvelope, ProcessBackend, SandboxConfig, SandboxRunResult,
-    load_sandbox_config, run_lifecycle,
-};
 use punkgo_state::{
-    ActorStore, BlobStore, EnergyLedger, EnergyReservation, EnvelopeStore, EventLog, EventRecord,
+    ActorStore, EnergyLedger, EnergyReservation, EnvelopeStore, EventLog, EventRecord,
     NewHoldRequest, StateStore,
 };
 
@@ -51,9 +46,9 @@ impl Default for KernelConfig {
 
 /// Cryptographic receipt returned after a successful action submission.
 ///
-/// Contains the event ID, log index, event hash, energy costs, and
-/// optional sandbox execution outputs. This is the caller's proof
-/// that their action was committed to the append-only history.
+/// Contains the event ID, log index, event hash, and energy costs.
+/// This is the caller's proof that their action was committed to the
+/// append-only history.
 #[derive(Debug, Clone, Serialize)]
 pub struct SubmitReceipt {
     pub event_id: String,
@@ -61,8 +56,7 @@ pub struct SubmitReceipt {
     pub event_hash: String,
     pub reserved_cost: i64,
     pub settled_cost: i64,
-    pub sandbox_run_id: Option<String>,
-    pub outputs: Value,
+    pub artifact_hash: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -86,10 +80,6 @@ struct ReadQuery {
     requester_id: Option<String>,
 }
 
-/// System hard timeout for execute actions (ms).
-/// Committer's structural duty (whitepaper §2): actor cannot override this.
-const SYSTEM_TIMEOUT_HARD_LIMIT_MS: u64 = 300_000; // 5 minutes
-
 /// The PunkGo kernel — single-writer append-only event system.
 ///
 /// The kernel is the **committer** (whitepaper §2): a structural role that
@@ -102,31 +92,22 @@ pub struct Kernel {
     energy_ledger: EnergyLedger,
     event_log: EventLog,
     audit_log: AuditLog,
-    backend_registry: BackendRegistry,
     actor_store: ActorStore,
     envelope_store: EnvelopeStore,
-    blob_store: BlobStore,
     stellar_config: StellarConfig,
-    sandbox_config: SandboxConfig,
 }
 
 impl Kernel {
     /// Initialize the kernel from a state directory.
     ///
-    /// Creates the SQLite database, registers the process backend,
-    /// loads stellar and sandbox configs, and prepares the root actor.
+    /// Creates the SQLite database, loads stellar config, and prepares the root actor.
     pub async fn bootstrap(config: &KernelConfig) -> KernelResult<Self> {
         let state_store = StateStore::bootstrap(&config.state_dir).await?;
         let energy_ledger = EnergyLedger::new(state_store.pool());
         let event_log = EventLog::new(state_store.pool());
         let audit_log = AuditLog::new(state_store.pool(), "punkgo/kernel");
-        let process_backend = ProcessBackend::new(&state_store.paths().workspace_root);
-        let mut backend_registry = BackendRegistry::new();
-        backend_registry.register(Arc::new(process_backend));
         let actor_store = ActorStore::new(state_store.pool());
         let envelope_store = EnvelopeStore::new(state_store.pool());
-        let blob_store = BlobStore::new(&state_store.paths().blobs_root);
-        blob_store.bootstrap()?;
 
         // Phase 2: Load stellar configuration (PIP-001 §1).
         let stellar_config_path = config.state_dir.join("stellar.toml");
@@ -138,25 +119,14 @@ impl Kernel {
             "stellar configuration loaded"
         );
 
-        // Phase 2b: Load sandbox resource-limit configuration.
-        let sandbox_config = load_sandbox_config(&stellar_config_path)?;
-        info!(
-            output_max_bytes = sandbox_config.output_max_bytes,
-            filesystem_allowlist_count = sandbox_config.filesystem_allowlist.len(),
-            "sandbox configuration loaded"
-        );
-
         Ok(Self {
             state_store,
             energy_ledger,
             event_log,
             audit_log,
-            backend_registry,
             actor_store,
             envelope_store,
-            blob_store,
             stellar_config,
-            sandbox_config,
         })
     }
 
@@ -484,73 +454,18 @@ impl Kernel {
             (0, None)
         };
 
-        // Step 4: EXECUTE (for Execute actions only)
-        let execute_result = if matches!(action.action_type, ActionType::Execute) {
-            let envelope = self.build_execution_envelope(&action)?;
-            let backend = self.resolve_backend_for_actor(&action.actor_id);
-            match run_lifecycle(&backend, &envelope).await {
-                Ok(run) => Some(run),
-                Err(err) => {
-                    // Determine if this is a timeout (circuit-breaker) event.
-                    let is_circuit_breaker = err.to_string().contains("timed out");
-                    let event_action_type = if is_circuit_breaker {
-                        "circuit_breaker".to_string()
-                    } else {
-                        action.action_type.as_str().to_string()
-                    };
-
-                    let mut failure_event = EventRecord {
-                        id: Uuid::new_v4().to_string(),
-                        log_index: 0,
-                        event_hash: String::new(),
-                        actor_id: action.actor_id.clone(),
-                        action_type: event_action_type,
-                        target: action.target.clone(),
-                        payload: action.payload.clone(),
-                        payload_hash: payload_hash_hex(&action)?,
-                        artifact_hash: None,
-                        reserved_energy: reserved_cost,
-                        settled_energy: reserved_cost,
-                        timestamp: now_millis_string(),
-                    };
-                    self.finalize_energy_and_event(
-                        reservation.as_ref(),
-                        reserved_cost,
-                        None,
-                        None,
-                        &mut failure_event,
-                    )
-                    .await?;
-
-                    if is_circuit_breaker {
-                        warn!(
-                            actor_id = %action.actor_id,
-                            timeout_ms = envelope.timeout_ms,
-                            "circuit-breaker: execute timed out, event recorded"
-                        );
-                    }
-
-                    return Err(err);
-                }
-            }
+        // Step 4: VALIDATE EXECUTE PAYLOAD (PIP-002 §2 — for Execute actions only)
+        // The kernel does not execute anything. It validates the actor-submitted
+        // result and records it. Actor executes, kernel records.
+        let artifact_hash = if matches!(action.action_type, ActionType::Execute) {
+            Some(Self::validate_execute_payload(&action.payload)?)
         } else {
             None
         };
 
-        // PIP-001 §12: Persist execute output to BlobStore.
-        // The artifact_hash (SHA-256 of stdout||stderr) is already computed by the
-        // sandbox. Here we store the actual content so it can be retrieved later.
-        if let Some(ref run) = execute_result {
-            let combined = format!("{}{}", run.stdout, run.stderr);
-            if let Err(err) = self.blob_store.put(combined.as_bytes()) {
-                warn!(error = %err, "failed to persist execute output to BlobStore");
-            }
-        }
-
         // Step 5: SETTLE
-        let settled_cost = self.compute_settled_cost(reserved_cost, execute_result.as_ref());
-
-        let artifact_hash = execute_result.as_ref().map(|r| r.artifact_hash.clone());
+        // For PIP-002: settled cost equals reserved cost (no post-execution IO adjustment).
+        let settled_cost = reserved_cost;
 
         // Step 6: APPEND
         let mut event = EventRecord {
@@ -562,7 +477,7 @@ impl Kernel {
             target: action.target.clone(),
             payload: action.payload.clone(),
             payload_hash: payload_hash_hex(&action)?,
-            artifact_hash,
+            artifact_hash: artifact_hash.clone(),
             reserved_energy: reserved_cost,
             settled_energy: settled_cost,
             timestamp: now_millis_string(),
@@ -697,21 +612,13 @@ impl Kernel {
             }
         }
 
-        let (sandbox_run_id, outputs) = if let Some(run) = execute_result {
-            let run_id = run.run_id.clone();
-            (Some(run_id), serde_json::to_value(run)?)
-        } else {
-            (None, json!({}))
-        };
-
         Ok(SubmitReceipt {
             event_id: event.id,
             log_index: event.log_index,
             event_hash: event.event_hash,
             reserved_cost,
             settled_cost,
-            sandbox_run_id,
-            outputs,
+            artifact_hash,
         })
     }
 
@@ -790,45 +697,44 @@ impl Kernel {
         }
     }
 
-    /// Build an ExecutionEnvelope from an Action, applying system hard limits.
-    /// Committer's structural duty (whitepaper §2): actor-requested values are capped
-    /// by system limits. Actor cannot override the system hard timeout.
-    fn build_execution_envelope(&self, action: &Action) -> KernelResult<ExecutionEnvelope> {
-        let mut envelope = ProcessBackend::envelope_from_action(
-            action,
-            &self.state_store.paths().workspace_root,
-            Some(SYSTEM_TIMEOUT_HARD_LIMIT_MS),
-        )?;
-        // Inject resource limits from sandbox config.
-        envelope.output_max_bytes = self.sandbox_config.output_max_bytes;
-        envelope.filesystem_allowlist = self.sandbox_config.filesystem_allowlist.clone();
-        Ok(envelope)
+    /// PIP-002 §2+§3: Validate execute action payload.
+    ///
+    /// The kernel MUST reject an execute submission that is missing any required
+    /// field or uses an invalid OID format. Returns the artifact_hash on success.
+    fn validate_execute_payload(payload: &Value) -> KernelResult<String> {
+        Self::require_valid_oid(payload, "input_oid")?;
+        Self::require_valid_oid(payload, "output_oid")?;
+
+        if payload.get("exit_code").and_then(|v| v.as_i64()).is_none() {
+            return Err(KernelError::ExecutePayloadInvalid(
+                "missing or invalid exit_code (must be integer)".to_string(),
+            ));
+        }
+
+        let artifact_hash = Self::require_valid_oid(payload, "artifact_hash")?;
+        Ok(artifact_hash)
     }
 
-    /// Resolve which backend to use for a given actor.
-    /// Currently always returns the default backend ("process").
-    /// Future: look up actor's `execution_backend` field.
-    fn resolve_backend_for_actor(
-        &self,
-        _actor_id: &str,
-    ) -> Arc<dyn punkgo_sandbox::ExecutionBackend> {
-        self.backend_registry
-            .default_backend()
-            .expect("ProcessBackend must be registered at bootstrap")
-            .clone()
-    }
+    /// Validate that a payload field exists and matches OID format: `sha256:<64 hex chars>`.
+    fn require_valid_oid(payload: &Value, field: &str) -> KernelResult<String> {
+        let val = payload
+            .get(field)
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| KernelError::ExecutePayloadInvalid(format!("missing {field}")))?;
 
-    fn compute_settled_cost(
-        &self,
-        reserved_cost: i64,
-        execute_result: Option<&SandboxRunResult>,
-    ) -> i64 {
-        let Some(run) = execute_result else {
-            return reserved_cost;
-        };
+        if !val.starts_with("sha256:") || val.len() != 71 {
+            return Err(KernelError::ExecutePayloadInvalid(format!(
+                "{field} must be sha256:<64 hex chars>, got: {val}"
+            )));
+        }
+        let hex_part = &val[7..];
+        if !hex_part.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(KernelError::ExecutePayloadInvalid(format!(
+                "{field} contains non-hex characters: {val}"
+            )));
+        }
 
-        let io_cost = ((run.stdout.len() + run.stderr.len()) as i64) / 1024;
-        reserved_cost + io_cost
+        Ok(val.to_string())
     }
 
     async fn read_query(&self, query: ReadQuery) -> KernelResult<Value> {
@@ -1551,13 +1457,7 @@ impl Kernel {
             event_hash: response_event.event_hash,
             reserved_cost: hold_reserved_cost,
             settled_cost: commitment_cost,
-            sandbox_run_id: None,
-            outputs: json!({
-                "hold_id": hold_id,
-                "decision": "reject",
-                "instruction": instruction,
-                "commitment_cost": commitment_cost
-            }),
+            artifact_hash: None,
         })
     }
 

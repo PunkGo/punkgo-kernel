@@ -9,7 +9,7 @@ use crate::errors::KernelResult;
 /// - `Observe` — read-only, zero cost, exempt from boundary checks
 /// - `Create` — creates new actors or envelopes (cost: 10)
 /// - `Mutate` — modifies state, triggers lifecycle operations (cost: 15)
-/// - `Execute` — runs an OS process in the sandbox (cost: 25 + I/O overhead)
+/// - `Execute` — actor-submitted execution result (cost: 25 + output_bytes/256)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ActionType {
@@ -52,22 +52,24 @@ pub struct Action {
     pub timestamp: Option<String>,
 }
 
-/// Computes the energy cost for an action (PIP-001 §4).
+/// Computes the energy cost for an action (PIP-001 §4, PIP-002 §4).
 ///
 /// - Observe: 0
 /// - Create: 10
 /// - Mutate: 15
-/// - Execute: 25 + payload_size / 256
+/// - Execute: 25 + output_bytes / 256 (output_bytes is actor-reported in payload)
 pub fn quote_cost(action: &Action) -> u64 {
     match action.action_type {
         ActionType::Observe => 0,
         ActionType::Create => 10,
         ActionType::Mutate => 15,
         ActionType::Execute => {
-            let payload_size = serde_json::to_vec(&action.payload)
-                .map(|v| v.len() as u64)
-                .unwrap_or_default();
-            25 + payload_size.saturating_div(256)
+            let output_bytes = action
+                .payload
+                .get("output_bytes")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            25 + output_bytes.saturating_div(256)
         }
     }
 }
@@ -114,10 +116,15 @@ mod tests {
     }
 
     #[test]
-    fn quote_execute_grows_with_payload() {
-        let small = make_action(ActionType::Execute, json!({ "x": "a" }));
-        let large = make_action(ActionType::Execute, json!({ "x": "a".repeat(2048) }));
-        assert!(quote_cost(&large) > quote_cost(&small));
+    fn quote_execute_uses_output_bytes() {
+        let no_io = make_action(ActionType::Execute, json!({}));
+        assert_eq!(quote_cost(&no_io), 25);
+
+        let small_io = make_action(ActionType::Execute, json!({ "output_bytes": 256 }));
+        assert_eq!(quote_cost(&small_io), 26);
+
+        let large_io = make_action(ActionType::Execute, json!({ "output_bytes": 2560 }));
+        assert_eq!(quote_cost(&large_io), 35);
     }
 
     #[test]

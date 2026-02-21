@@ -24,8 +24,8 @@ pub enum KernelError {
     AuthorizationRequired(String),
     #[error("hold triggered: hold_id={hold_id}, agent={agent_id}")]
     HoldTriggered { hold_id: String, agent_id: String },
-    #[error("sandbox error: {0}")]
-    Sandbox(String),
+    #[error("execute payload invalid: {0}")]
+    ExecutePayloadInvalid(String),
     #[error("audit error: {0}")]
     Audit(String),
     #[error(transparent)]
@@ -90,8 +90,8 @@ impl KernelError {
                 "hold_id": hold_id,
                 "agent_id": agent_id,
             }),
-            KernelError::Sandbox(detail) => serde_json::json!({
-                "error_type": "Sandbox",
+            KernelError::ExecutePayloadInvalid(detail) => serde_json::json!({
+                "error_type": "ExecutePayloadInvalid",
                 "message": self.to_string(),
                 "detail": detail,
             }),

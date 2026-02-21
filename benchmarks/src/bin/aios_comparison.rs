@@ -9,7 +9,7 @@ fn main() {
                 "dimension": "Trusted Computing Base (TCB)",
                 "aios": "LLM (non-deterministic, unverifiable)",
                 "punkgo_claim": "Kernel (deterministic, formally verifiable)",
-                "punkgo_evidence": "Kernel is a Rust user-space process. All security decisions (boundary check, energy check, hold trigger) are deterministic code paths in kernel.rs. No LLM in the TCB. Pipeline: validate -> quote -> reserve -> execute -> settle -> append is a fixed, synchronous, linear sequence.",
+                "punkgo_evidence": "Kernel is a Rust user-space process. All security decisions (boundary check, energy check, hold trigger) are deterministic code paths in kernel.rs. No LLM in the TCB. Pipeline: validate -> quote -> reserve -> payload_validate -> settle -> append is a fixed, synchronous, linear sequence (PIP-002: kernel does not execute, only records).",
                 "code_references": [
                     "crates/punkgo-runtime/src/kernel.rs — submit_action() pipeline",
                     "crates/punkgo-core/src/boundary.rs — check_writable_boundary()",
@@ -84,7 +84,7 @@ fn main() {
                 "dimension": "Formal Invariants",
                 "aios": "None",
                 "punkgo_claim": "5 invariants with semi-formal proofs",
-                "punkgo_evidence": "Paper defines 5 invariants: (1) Append-Only — no delete/modify operations exist; (2) Completeness — every pipeline path ends in append; (3) Integrity — Merkle root = MerkleRoot(log); (4) Boundary Enforcement — validate is first pipeline step, default deny; (5) Energy Conservation — reserve before execute, balance >= 0. All verified by integration tests.",
+                "punkgo_evidence": "Paper defines 5 invariants: (1) Append-Only — no delete/modify operations exist; (2) Completeness — every pipeline path ends in append; (3) Integrity — Merkle root = MerkleRoot(log); (4) Boundary Enforcement — validate is first pipeline step, default deny; (5) Energy Conservation — reserve before settle, balance >= 0. All verified by integration tests.",
                 "code_references": [
                     "crates/punkgo-runtime/tests/ — 120+ tests covering all invariants",
                     "Paper §4.6 — formal statement and proofs"

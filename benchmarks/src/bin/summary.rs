@@ -184,8 +184,7 @@ fn main() {
     md.push_str("|---------------|--------|-------|\n");
     md.push_str("| prev_hash chain (Def. 7) | Replaced by Merkle tree | Hash chain via tlog, not per-event prev_hash field |\n");
     md.push_str("| Hardware auto-detection (INT8 TOPS) | Config only | luminosity_source always 'config', no hardware probe |\n");
-    md.push_str("| BlobStore wiring in Kernel | Not wired | BlobStore implemented but not called from execute pipeline |\n");
-    md.push_str("| Docker/Firecracker backends | Not implemented | Only ProcessBackend exists |\n");
+    md.push_str("| Execute backends | Actor responsibility (PIP-002) | Kernel validates payload, does not execute |\n");
     md.push_str(
         "| Formal verification (Verus) | Future work | Paper proofs only, no machine-checked |\n",
     );
@@ -202,7 +201,7 @@ fn main() {
         "- Throughput degrades over time due to O(n) snapshot refresh after each commit.\n",
     );
     md.push_str(
-        "- Execute action performance is dominated by OS process spawn, not kernel overhead.\n",
+        "- PIP-002: Execute is actor-submitted result. Kernel validates payload format, no process spawn.\n",
     );
     md.push_str(
         "- Hold workflow timing excludes human decision time (measures mechanical latency only).\n",
