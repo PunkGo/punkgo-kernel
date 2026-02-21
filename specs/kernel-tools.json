@@ -1,0 +1,693 @@
+{
+  "name": "punkgo-kernel",
+  "version": "0.2.0",
+  "description": "PunkGo Local Sovereignty Compute Kernel — a single-writer, append-only event system implementing the Right to History. The kernel is a committer (not executor): it validates, records, and proves actions. All operations go through IPC (Unix socket / Windows named pipe) as JSON request/response envelopes.",
+  "transport": {
+    "protocol": "ipc",
+    "endpoint_unix": "state/punkgo.sock",
+    "endpoint_windows": "\\\\.\\pipe\\punkgo-kernel",
+    "envelope": {
+      "request": {
+        "request_id": "string (UUID recommended)",
+        "type": "quote | submit | read",
+        "payload": "object (tool-specific)"
+      },
+      "response": {
+        "request_id": "string (echo)",
+        "status": "ok | error",
+        "payload": "object (tool-specific or error payload)"
+      }
+    }
+  },
+  "read_common_fields": {
+    "description": "All read queries accept these optional fields in addition to tool-specific fields.",
+    "requester_id": { "type": "string", "description": "Identity of requester for visibility boundary checks. Currently all-transparent (single-user mode). Will become required when multi-user collaboration is introduced." }
+  },
+  "errors": {
+    "description": "All errors return status='error' with a structured payload containing error_type (machine-readable) and message (human-readable).",
+    "types": [
+      { "error_type": "InvalidRequest", "description": "Malformed request or missing required fields", "fields": ["detail"] },
+      { "error_type": "PolicyViolation", "description": "Action violates kernel policy (PIP-001)", "fields": ["detail"] },
+      { "error_type": "ActorNotFound", "description": "Referenced actor does not exist", "fields": ["actor_id"] },
+      { "error_type": "InsufficientEnergy", "description": "Actor lacks energy for this action", "fields": ["actor_id", "required", "available"] },
+      { "error_type": "ActorFrozen", "description": "Actor is frozen and cannot perform state-changing actions", "fields": ["actor_id"] },
+      { "error_type": "BoundaryViolation", "description": "Action target outside actor's writable_targets", "fields": ["detail"] },
+      { "error_type": "AuthorizationRequired", "description": "Agent needs an active envelope for state-changing actions", "fields": ["detail"] },
+      { "error_type": "HoldTriggered", "description": "Action intercepted by hold_on rule; awaiting Human judgment", "fields": ["hold_id", "agent_id"] },
+      { "error_type": "ExecutePayloadInvalid", "description": "Execute action payload missing required fields or invalid OID format (PIP-002 §3)", "fields": ["detail"] },
+      { "error_type": "Audit", "description": "Audit subsystem error", "fields": ["detail"] },
+      { "error_type": "Io", "description": "Filesystem or IO error (internal)" },
+      { "error_type": "Db", "description": "Database error (internal)" },
+      { "error_type": "Json", "description": "JSON serialization/deserialization error (internal)" }
+    ]
+  },
+  "tools": [
+    {
+      "name": "quote",
+      "description": "Compute the energy cost for an action without executing it. Returns the cost that would be charged if submitted. Useful for UI display or pre-flight checks.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "actor_id": { "type": "string", "description": "Actor performing the action" },
+          "action_type": { "type": "string", "enum": ["observe", "create", "mutate", "execute"], "description": "One of the four atomic action types" },
+          "target": { "type": "string", "description": "Target path (e.g. 'workspace/myfile')" },
+          "payload": { "type": "object", "description": "Action-specific payload. For execute, include output_bytes for accurate IO cost." }
+        },
+        "required": ["actor_id", "action_type", "target"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "cost": { "type": "integer", "description": "Energy cost in units. observe=0, create=10, mutate=15, execute=25+output_bytes/256" }
+        },
+        "required": ["cost"]
+      }
+    },
+    {
+      "name": "submit_observe",
+      "description": "Submit a read-only observation. Cost: 0. Exempt from boundary checks and authorization. Records the observation in the append-only event log.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "actor_id": { "type": "string", "description": "Actor performing the observation" },
+          "action_type": { "const": "observe" },
+          "target": { "type": "string", "description": "Target path being observed" },
+          "payload": { "type": "object", "description": "Optional observation metadata" }
+        },
+        "required": ["actor_id", "action_type", "target"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "event_id": { "type": "string", "description": "UUID of the committed event" },
+          "log_index": { "type": "integer", "description": "Sequential index in the append-only log" },
+          "event_hash": { "type": "string", "description": "SHA-256 hex hash of the event (64 chars)" },
+          "reserved_cost": { "type": "integer" },
+          "settled_cost": { "type": "integer" },
+          "artifact_hash": { "type": "null" }
+        },
+        "required": ["event_id", "log_index", "event_hash", "reserved_cost", "settled_cost"]
+      }
+    },
+    {
+      "name": "submit_create",
+      "description": "Submit a create action. Cost: 10. Creates new resources. Special targets: 'ledger/actor' (create actor), 'ledger/envelope' (create authorization envelope), 'system/policy' (set policy version).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "actor_id": { "type": "string", "description": "Actor performing the creation (must have boundary permission)" },
+          "action_type": { "const": "create" },
+          "target": { "type": "string", "description": "Target path. Use 'ledger/actor' for actors, 'ledger/envelope' for envelopes, 'system/policy' for policy, or any workspace path." },
+          "payload": { "type": "object", "description": "Target-specific payload (see submit_create_actor, submit_create_envelope)" }
+        },
+        "required": ["actor_id", "action_type", "target"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "event_id": { "type": "string" },
+          "log_index": { "type": "integer" },
+          "event_hash": { "type": "string" },
+          "reserved_cost": { "type": "integer" },
+          "settled_cost": { "type": "integer" },
+          "artifact_hash": { "type": "null" }
+        },
+        "required": ["event_id", "log_index", "event_hash", "reserved_cost", "settled_cost"]
+      }
+    },
+    {
+      "name": "submit_create_actor",
+      "description": "Create a new actor (Human or Agent). Only Humans can create Agents (PIP-001 §5). The new actor's writable_targets must be a subset of the creator's boundary. Target must be 'ledger/actor'.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "actor_id": { "type": "string", "description": "Creator's actor ID (must be Human to create Agents)" },
+          "action_type": { "const": "create" },
+          "target": { "const": "ledger/actor" },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "actor_id": { "type": "string", "description": "ID for the new actor. If omitted, derived from purpose." },
+              "actor_type": { "type": "string", "enum": ["human", "agent"], "default": "agent", "description": "Type of actor to create" },
+              "purpose": { "type": "string", "default": "legacy", "description": "Purpose label for the actor (used in ID derivation if actor_id omitted)" },
+              "energy_balance": { "type": "integer", "default": 1000, "description": "Initial energy balance" },
+              "writable_targets": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "target": { "type": "string", "description": "Glob pattern (e.g. 'workspace/**')" },
+                    "actions": { "type": "array", "items": { "type": "string", "enum": ["observe", "create", "mutate", "execute"] } }
+                  },
+                  "required": ["target", "actions"]
+                },
+                "description": "Boundary permissions. Must be subset of creator's boundary."
+              },
+              "energy_share": { "type": "number", "default": 0.0, "description": "Share of energy production ticks (0.0-1.0)" },
+              "reduction_policy": { "type": "string", "default": "none", "description": "Reduction policy label" }
+            }
+          }
+        },
+        "required": ["actor_id", "action_type", "target", "payload"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "event_id": { "type": "string" },
+          "log_index": { "type": "integer" },
+          "event_hash": { "type": "string" },
+          "reserved_cost": { "type": "integer", "description": "Always 10" },
+          "settled_cost": { "type": "integer", "description": "Always 10" },
+          "artifact_hash": { "type": "null" }
+        },
+        "required": ["event_id", "log_index", "event_hash", "reserved_cost", "settled_cost"]
+      }
+    },
+    {
+      "name": "submit_create_envelope",
+      "description": "Create an authorization envelope for an Agent (PIP-001 §11). Envelopes grant bounded permission: budget, target patterns, action types, optional duration, checkpoint reporting, and hold rules. Target must be 'ledger/envelope'.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "actor_id": { "type": "string", "description": "Grantor's actor ID (Human or parent Agent)" },
+          "action_type": { "const": "create" },
+          "target": { "const": "ledger/envelope" },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "actor_id": { "type": "string", "description": "Agent receiving the envelope" },
+              "budget": { "type": "integer", "description": "Energy consumption upper bound (must be positive)" },
+              "targets": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Allowed target glob patterns (e.g. ['workspace/**'])"
+              },
+              "actions": {
+                "type": "array",
+                "items": { "type": "string", "enum": ["observe", "create", "mutate", "execute"] },
+                "description": "Allowed action types within this envelope"
+              },
+              "duration_secs": { "type": "integer", "description": "Optional time limit in seconds. Null = no expiry." },
+              "report_every": { "type": "integer", "description": "Optional checkpoint: log a report every N energy units consumed" },
+              "hold_on": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "target": { "type": "string", "description": "Glob pattern for targets that trigger holds" },
+                    "actions": { "type": "array", "items": { "type": "string" }, "description": "Action types that trigger holds when target matches" }
+                  },
+                  "required": ["target", "actions"]
+                },
+                "description": "Optional hold rules (PIP-001 §11a). Matching actions are intercepted for Human judgment."
+              },
+              "hold_timeout_secs": { "type": "integer", "description": "Optional timeout in seconds for unresponded holds. Exceeded holds are auto-rejected." }
+            },
+            "required": ["actor_id", "budget", "targets", "actions"]
+          }
+        },
+        "required": ["actor_id", "action_type", "target", "payload"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "event_id": { "type": "string" },
+          "log_index": { "type": "integer" },
+          "event_hash": { "type": "string" },
+          "reserved_cost": { "type": "integer" },
+          "settled_cost": { "type": "integer" },
+          "artifact_hash": { "type": "null" }
+        },
+        "required": ["event_id", "log_index", "event_hash", "reserved_cost", "settled_cost"]
+      }
+    },
+    {
+      "name": "submit_mutate",
+      "description": "Submit a state mutation. Cost: 15. Modifies existing state. Special targets: 'ledger/hold/<hold_id>' (approve/reject a hold), 'ledger/actor/<actor_id>/freeze' (freeze), 'ledger/actor/<actor_id>/unfreeze' (unfreeze), 'ledger/actor/<actor_id>/terminate' (terminate).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "actor_id": { "type": "string", "description": "Actor performing the mutation" },
+          "action_type": { "const": "mutate" },
+          "target": { "type": "string", "description": "Target path to mutate" },
+          "payload": { "type": "object", "description": "Mutation payload. For hold responses: {decision, instruction?}. For lifecycle: {reason?}." }
+        },
+        "required": ["actor_id", "action_type", "target"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "event_id": { "type": "string" },
+          "log_index": { "type": "integer" },
+          "event_hash": { "type": "string" },
+          "reserved_cost": { "type": "integer" },
+          "settled_cost": { "type": "integer" },
+          "artifact_hash": { "type": "null" }
+        },
+        "required": ["event_id", "log_index", "event_hash", "reserved_cost", "settled_cost"]
+      }
+    },
+    {
+      "name": "submit_hold_response",
+      "description": "Approve or reject a pending hold (PIP-001 §11d). Only Human actors can resolve holds. Target: 'ledger/hold/<hold_id>'. On approve: the pending action is re-executed through the full pipeline. On reject: 20% commitment cost is settled, remaining energy released.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "actor_id": { "type": "string", "description": "Human actor resolving the hold" },
+          "action_type": { "const": "mutate" },
+          "target": { "type": "string", "pattern": "^ledger/hold/.+$", "description": "Must be 'ledger/hold/<hold_id>'" },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "decision": { "type": "string", "enum": ["approve", "reject"], "description": "Human's judgment" },
+              "instruction": { "type": "string", "description": "Optional instruction appended to the re-executed action's payload on approve" }
+            },
+            "required": ["decision"]
+          }
+        },
+        "required": ["actor_id", "action_type", "target", "payload"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "event_id": { "type": "string", "description": "On approve: event_id of the re-executed action. On reject: event_id of the hold_response event." },
+          "log_index": { "type": "integer" },
+          "event_hash": { "type": "string" },
+          "reserved_cost": { "type": "integer" },
+          "settled_cost": { "type": "integer", "description": "On reject: 20% commitment cost. On approve: full action cost." },
+          "artifact_hash": { "type": ["string", "null"], "description": "Present only if the approved action was an execute" }
+        },
+        "required": ["event_id", "log_index", "event_hash", "reserved_cost", "settled_cost"]
+      }
+    },
+    {
+      "name": "submit_lifecycle",
+      "description": "Freeze, unfreeze, or terminate an actor (PIP-001 §7). Only the creator (or ancestor in lineage) can freeze/unfreeze/terminate an agent. Freeze cascades to all descendants.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "actor_id": { "type": "string", "description": "Actor initiating the lifecycle operation (must be creator or ancestor)" },
+          "action_type": { "const": "mutate" },
+          "target": { "type": "string", "description": "Pattern: 'ledger/actor/<target_actor_id>/(freeze|unfreeze|terminate)'" },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "reason": { "type": "string", "description": "Optional reason for the operation" }
+            }
+          }
+        },
+        "required": ["actor_id", "action_type", "target"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "event_id": { "type": "string" },
+          "log_index": { "type": "integer" },
+          "event_hash": { "type": "string" },
+          "reserved_cost": { "type": "integer" },
+          "settled_cost": { "type": "integer" },
+          "artifact_hash": { "type": "null" }
+        },
+        "required": ["event_id", "log_index", "event_hash", "reserved_cost", "settled_cost"]
+      }
+    },
+    {
+      "name": "submit_execute",
+      "description": "Submit an execution result (PIP-002). The actor executes externally and submits the result to the kernel. The kernel validates payload format and records the event. It does NOT execute commands or verify OID content. Cost: 25 + output_bytes/256.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "actor_id": { "type": "string", "description": "Actor that performed the execution" },
+          "action_type": { "const": "execute" },
+          "target": { "type": "string", "description": "Target path for the execution result" },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "input_oid": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$", "description": "OID reference to serialized input (sha256:<64 hex chars>)" },
+              "output_oid": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$", "description": "OID reference to serialized output" },
+              "exit_code": { "type": "integer", "description": "Process exit code (0 = success)" },
+              "artifact_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$", "description": "SHA-256 of raw output bytes" },
+              "output_bytes": { "type": "integer", "description": "Optional: output size for IO cost. Cost = 25 + output_bytes/256." }
+            },
+            "required": ["input_oid", "output_oid", "exit_code", "artifact_hash"]
+          }
+        },
+        "required": ["actor_id", "action_type", "target", "payload"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "event_id": { "type": "string" },
+          "log_index": { "type": "integer" },
+          "event_hash": { "type": "string" },
+          "reserved_cost": { "type": "integer" },
+          "settled_cost": { "type": "integer" },
+          "artifact_hash": { "type": "string", "description": "Echo of the submitted artifact_hash" }
+        },
+        "required": ["event_id", "log_index", "event_hash", "reserved_cost", "settled_cost", "artifact_hash"]
+      }
+    },
+    {
+      "name": "read_health",
+      "description": "Check kernel health status.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "kind": { "const": "health" },
+          "requester_id": { "type": "string", "description": "Optional: identity of requester for visibility boundary checks. Currently all-transparent (single-user)." }
+        },
+        "required": ["kind"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "status": { "const": "ok" }
+        },
+        "required": ["status"]
+      }
+    },
+    {
+      "name": "read_actor_energy",
+      "description": "Query an actor's current energy balance and reserved energy.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "kind": { "const": "actor_energy" },
+          "actor_id": { "type": "string", "description": "Actor to query" }
+        },
+        "required": ["kind", "actor_id"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "actor_id": { "type": "string" },
+          "energy_balance": { "type": "integer", "description": "Available energy (after subtracting reserved)" },
+          "reserved_energy": { "type": "integer", "description": "Energy currently held in reservations (holds)" }
+        },
+        "required": ["actor_id", "energy_balance", "reserved_energy"]
+      }
+    },
+    {
+      "name": "read_actor_info",
+      "description": "Query an actor's full record: type, creator, lineage, status, boundary, energy share.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "kind": { "const": "actor_info" },
+          "actor_id": { "type": "string", "description": "Actor to query" }
+        },
+        "required": ["kind", "actor_id"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "actor_id": { "type": "string" },
+          "actor_type": { "type": "string", "enum": ["human", "agent"] },
+          "creator_id": { "type": ["string", "null"] },
+          "lineage": { "type": "array", "items": { "type": "string" } },
+          "purpose": { "type": ["string", "null"] },
+          "status": { "type": "string", "enum": ["active", "frozen"] },
+          "writable_targets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "target": { "type": "string" },
+                "actions": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          },
+          "energy_share": { "type": "number" },
+          "reduction_policy": { "type": "string" },
+          "created_at": { "type": "string", "description": "ISO timestamp of actor creation" },
+          "updated_at": { "type": "string", "description": "ISO timestamp of last update" }
+        },
+        "required": ["actor_id", "actor_type", "status"]
+      }
+    },
+    {
+      "name": "read_events",
+      "description": "Query recent events from the append-only log. Optionally filter by actor.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "kind": { "const": "events" },
+          "actor_id": { "type": "string", "description": "Optional: filter events by actor" },
+          "limit": { "type": "integer", "description": "Max events to return (1-100, default: 20)" }
+        },
+        "required": ["kind"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "log_index": { "type": "integer" },
+                "event_hash": { "type": "string" },
+                "actor_id": { "type": "string" },
+                "action_type": { "type": "string" },
+                "target": { "type": "string" },
+                "payload": { "type": "object" },
+                "payload_hash": { "type": "string" },
+                "artifact_hash": { "type": ["string", "null"] },
+                "reserved_energy": { "type": "integer" },
+                "settled_energy": { "type": "integer" },
+                "timestamp": { "type": "string" }
+              }
+            }
+          }
+        },
+        "required": ["events"]
+      }
+    },
+    {
+      "name": "read_stats",
+      "description": "Query event log statistics.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "kind": { "const": "stats" }
+        },
+        "required": ["kind"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "event_count": { "type": "integer" }
+        },
+        "required": ["event_count"]
+      }
+    },
+    {
+      "name": "read_snapshot",
+      "description": "Get the current state snapshot (event count, hash, timestamp). Note: refreshes the snapshot before returning.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "kind": { "const": "snapshot" }
+        },
+        "required": ["kind"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "event_count": { "type": "integer" },
+          "snapshot_hash": { "type": "string" },
+          "generated_at": { "type": "string" }
+        },
+        "required": ["event_count", "snapshot_hash", "generated_at"]
+      }
+    },
+    {
+      "name": "read_paths",
+      "description": "Get filesystem paths used by the kernel state.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "kind": { "const": "paths" }
+        },
+        "required": ["kind"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "root": { "type": "string" },
+          "workspace_root": { "type": "string" },
+          "quarantine_root": { "type": "string" },
+          "snapshots_root": { "type": "string" },
+          "db_path": { "type": "string" }
+        },
+        "required": ["root", "workspace_root", "quarantine_root", "snapshots_root", "db_path"]
+      }
+    },
+    {
+      "name": "read_stellar_info",
+      "description": "Query the stellar (hardware) configuration. Shows the machine's compute power and energy production parameters (PIP-001 §1-§2).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "kind": { "const": "stellar_info" }
+        },
+        "required": ["kind"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "gpu_model": { "type": "string", "description": "GPU model name (defaults to 'unknown')" },
+          "cpu_model": { "type": "string", "description": "CPU model name (defaults to 'unknown')" },
+          "int8_tops": { "type": "number", "description": "INT8 TOPS — hardware compute power determining energy production" },
+          "energy_per_tick": { "type": "integer", "description": "Energy units produced each tick" },
+          "tick_interval_ms": { "type": "integer", "description": "Milliseconds between energy production ticks" },
+          "luminosity_source": { "type": "string" }
+        },
+        "required": ["int8_tops", "energy_per_tick", "tick_interval_ms"]
+      }
+    },
+    {
+      "name": "read_envelope_info",
+      "description": "Query the active authorization envelope for an agent (PIP-001 §11).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "kind": { "const": "envelope_info" },
+          "actor_id": { "type": "string", "description": "Agent to query" }
+        },
+        "required": ["kind", "actor_id"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "description": "Returns the full EnvelopeRecord if active, or {actor_id, envelope: null} if none.",
+        "properties": {
+          "envelope_id": { "type": "string" },
+          "actor_id": { "type": "string" },
+          "grantor_id": { "type": "string" },
+          "parent_envelope_id": { "type": ["string", "null"] },
+          "budget": { "type": "integer" },
+          "budget_consumed": { "type": "integer" },
+          "targets": { "type": "array", "items": { "type": "string" } },
+          "actions": { "type": "array", "items": { "type": "string" } },
+          "duration_secs": { "type": ["integer", "null"] },
+          "report_every": { "type": ["integer", "null"] },
+          "hold_on": { "type": "array", "items": { "type": "object" } },
+          "hold_timeout_secs": { "type": ["integer", "null"] },
+          "status": { "type": "string", "enum": ["active", "expired", "revoked"] },
+          "last_report_at": { "type": "integer", "description": "Last checkpoint report timestamp (energy units consumed)" },
+          "created_at": { "type": "string", "description": "ISO timestamp of envelope creation" },
+          "expires_at": { "type": ["string", "null"], "description": "ISO timestamp of expiry (null if no duration)" },
+          "updated_at": { "type": "string", "description": "ISO timestamp of last update" }
+        }
+      }
+    },
+    {
+      "name": "read_hold_info",
+      "description": "Query a single hold request by ID (PIP-001 §11).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "kind": { "const": "hold_info" },
+          "hold_id": { "type": "string", "description": "Hold request ID" }
+        },
+        "required": ["kind", "hold_id"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "hold_id": { "type": "string" },
+          "envelope_id": { "type": "string" },
+          "agent_id": { "type": "string" },
+          "trigger_target": { "type": "string" },
+          "trigger_action": { "type": "string" },
+          "pending_payload": { "type": "object" },
+          "status": { "type": "string", "enum": ["pending", "approved", "rejected", "timed_out"] },
+          "triggered_at": { "type": "string" }
+        },
+        "required": ["hold_id", "status"]
+      }
+    },
+    {
+      "name": "read_holds_pending",
+      "description": "List pending hold requests, optionally filtered by agent (PIP-001 §11).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "kind": { "const": "holds_pending" },
+          "actor_id": { "type": "string", "description": "Optional: filter by agent ID" }
+        },
+        "required": ["kind"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "holds": {
+            "type": "array",
+            "items": { "type": "object", "description": "Same structure as read_hold_info output" }
+          }
+        },
+        "required": ["holds"]
+      }
+    },
+    {
+      "name": "read_audit_checkpoint",
+      "description": "Get the latest Merkle tree checkpoint (C2SP format). Proves the current tree state for independent verification (whitepaper §3.5/§3.7).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "kind": { "const": "audit_checkpoint" }
+        },
+        "required": ["kind"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "description": "C2SP checkpoint: origin, tree_size, root_hash, signature"
+      }
+    },
+    {
+      "name": "read_audit_inclusion_proof",
+      "description": "Get a Merkle inclusion proof for a specific event (RFC 6962). Proves that an event exists in the append-only log.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "kind": { "const": "audit_inclusion_proof" },
+          "log_index": { "type": "integer", "description": "The event's log_index to prove" },
+          "tree_size": { "type": "integer", "description": "Optional: tree size to prove against. Defaults to current tree size." }
+        },
+        "required": ["kind", "log_index"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "log_index": { "type": "integer" },
+          "tree_size": { "type": "integer" },
+          "proof": { "type": "array", "items": { "type": "string" }, "description": "Array of hex-encoded sibling hashes" }
+        },
+        "required": ["log_index", "tree_size", "proof"]
+      }
+    },
+    {
+      "name": "read_audit_consistency_proof",
+      "description": "Get a Merkle consistency proof between two tree sizes (RFC 6962). Proves the log is append-only between two points in time.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "kind": { "const": "audit_consistency_proof" },
+          "old_size": { "type": "integer", "description": "Earlier tree size" },
+          "tree_size": { "type": "integer", "description": "Later tree size" }
+        },
+        "required": ["kind", "old_size", "tree_size"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "old_size": { "type": "integer" },
+          "new_size": { "type": "integer" },
+          "proof": { "type": "array", "items": { "type": "string" }, "description": "Array of hex-encoded consistency hashes" }
+        },
+        "required": ["old_size", "new_size", "proof"]
+      }
+    }
+  ]
+}
