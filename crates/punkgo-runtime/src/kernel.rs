@@ -361,16 +361,20 @@ impl Kernel {
                             )
                             .await?;
                         // Envelope stays Active — agent can continue submitting (PIP-001 §11b).
-                        tx.commit().await?;
 
-                        // Append to audit log (best-effort, like circuit-breaker).
-                        if let Err(err) = self
-                            .audit_log
-                            .append_leaf(hold_event.log_index as u64, &hold_event.event_hash)
+                        // Audit trail — atomic with event (whitepaper §3 invariant 5).
+                        let log_index = hold_event.log_index as u64;
+                        let tree_size = log_index + 1;
+                        self.audit_log
+                            .append_leaf_in_tx(&mut tx, log_index, &hold_event.event_hash)
                             .await
-                        {
-                            warn!(error = %err, "hold_request audit append failed");
-                        }
+                            .map_err(|e| KernelError::Audit(e.to_string()))?;
+                        self.audit_log
+                            .make_checkpoint_in_tx(&mut tx, tree_size)
+                            .await
+                            .map_err(|e| KernelError::Audit(e.to_string()))?;
+
+                        tx.commit().await?;
 
                         return Err(KernelError::HoldTriggered {
                             hold_id,
@@ -630,71 +634,62 @@ impl Kernel {
         create_envelope: Option<&(String, EnvelopeSpec, Option<String>)>,
         event: &mut EventRecord,
     ) -> KernelResult<()> {
+        let pool = self.state_store.pool();
+        let mut tx = pool.begin().await?;
+
+        // Energy settlement (if reservation exists).
         if let Some(res) = reservation {
-            let pool = self.state_store.pool();
-            let mut tx = pool.begin().await?;
             self.energy_ledger
                 .settle_in_tx(&mut tx, &res.actor_id, res.reserved, settled_cost)
                 .await?;
-            if let Some(spec) = create_actor {
-                // Phase 1: create actor in both energy_ledger and actors table.
-                self.energy_ledger
-                    .create_actor_in_tx(&mut tx, &spec.actor_id, spec.energy_balance)
-                    .await?;
-                self.actor_store.create_in_tx(&mut tx, spec).await?;
-                info!(
-                    created_actor = %spec.actor_id,
-                    actor_type = spec.actor_type.as_str(),
-                    energy_balance = spec.energy_balance,
-                    "actor created in transaction"
-                );
-            }
-            // Phase 4b: create envelope in the same transaction (whitepaper §3 invariant 6).
-            if let Some((envelope_id, spec, parent_id)) = create_envelope {
-                self.envelope_store
-                    .create_in_tx(&mut tx, envelope_id, spec, parent_id.as_deref())
-                    .await?;
-                info!(
-                    envelope_id = %envelope_id,
-                    actor_id = %spec.actor_id,
-                    grantor_id = %spec.grantor_id,
-                    budget = spec.budget,
-                    "envelope created in transaction (whitepaper §3 invariant 6)"
-                );
-            }
-            self.event_log.append_in_tx(&mut tx, event).await?;
-            tx.commit().await?;
-            info!(event_id = %event.id, log_index = event.log_index, "state mutation committed");
-            self.post_commit_audit(event).await;
-            if let Err(err) = self.state_store.refresh_snapshot().await {
-                warn!(error = %err, "failed to refresh snapshot after committed event");
-            }
-            return Ok(());
         }
 
-        self.event_log.append(event).await?;
-        info!(event_id = %event.id, log_index = event.log_index, "event committed");
-        self.post_commit_audit(event).await;
-        if let Err(err) = self.state_store.refresh_snapshot().await {
-            warn!(error = %err, "failed to refresh snapshot after committed event");
+        // Actor creation (if applicable).
+        if let Some(spec) = create_actor {
+            self.energy_ledger
+                .create_actor_in_tx(&mut tx, &spec.actor_id, spec.energy_balance)
+                .await?;
+            self.actor_store.create_in_tx(&mut tx, spec).await?;
+            info!(
+                created_actor = %spec.actor_id,
+                actor_type = spec.actor_type.as_str(),
+                energy_balance = spec.energy_balance,
+                "actor created in transaction"
+            );
         }
-        Ok(())
-    }
 
-    async fn post_commit_audit(&self, event: &EventRecord) {
+        // Envelope creation (if applicable, whitepaper §3 invariant 6).
+        if let Some((envelope_id, spec, parent_id)) = create_envelope {
+            self.envelope_store
+                .create_in_tx(&mut tx, envelope_id, spec, parent_id.as_deref())
+                .await?;
+            info!(
+                envelope_id = %envelope_id,
+                actor_id = %spec.actor_id,
+                grantor_id = %spec.grantor_id,
+                budget = spec.budget,
+                "envelope created in transaction"
+            );
+        }
+
+        // Event append.
+        self.event_log.append_in_tx(&mut tx, event).await?;
+
+        // Audit trail update — atomic with event (whitepaper §3 invariant 5).
         let log_index = event.log_index as u64;
         let tree_size = log_index + 1;
-        if let Err(err) = self
-            .audit_log
-            .append_leaf(log_index, &event.event_hash)
+        self.audit_log
+            .append_leaf_in_tx(&mut tx, log_index, &event.event_hash)
             .await
-        {
-            warn!(error = %err, "audit append_leaf failed");
-            return;
-        }
-        if let Err(err) = self.audit_log.make_checkpoint(tree_size).await {
-            warn!(error = %err, "audit make_checkpoint failed");
-        }
+            .map_err(|e| KernelError::Audit(e.to_string()))?;
+        self.audit_log
+            .make_checkpoint_in_tx(&mut tx, tree_size)
+            .await
+            .map_err(|e| KernelError::Audit(e.to_string()))?;
+
+        tx.commit().await?;
+        info!(event_id = %event.id, log_index = event.log_index, "event committed");
+        Ok(())
     }
 
     /// PIP-002 §2+§3: Validate execute action payload.
@@ -773,11 +768,18 @@ impl Kernel {
                 Ok(json!({ "event_count": event_count }))
             }
             "snapshot" => {
-                let snapshot = self.state_store.refresh_snapshot().await?;
+                // Legacy: snapshot is superseded by audit checkpoint.
+                // Return audit checkpoint data for backward compatibility.
+                let event_count = self.event_log.count().await?;
+                let cp = self
+                    .audit_log
+                    .latest_checkpoint()
+                    .await
+                    .map_err(|e| KernelError::Audit(e.to_string()))?;
                 Ok(json!({
-                    "event_count": snapshot.event_count,
-                    "snapshot_hash": snapshot.hash,
-                    "generated_at": snapshot.generated_at
+                    "event_count": event_count,
+                    "snapshot_hash": cp.root_hash,
+                    "generated_at": cp.created_at
                 }))
             }
             "paths" => {
@@ -786,7 +788,6 @@ impl Kernel {
                     "root": paths.root.display().to_string(),
                     "workspace_root": paths.workspace_root.display().to_string(),
                     "quarantine_root": paths.quarantine_root.display().to_string(),
-                    "snapshots_root": paths.snapshots_root.display().to_string(),
                     "db_path": paths.db_path.display().to_string()
                 }))
             }
@@ -1353,13 +1354,20 @@ impl Kernel {
         self.event_log
             .append_in_tx(&mut tx, &mut response_event)
             .await?;
-        tx.commit().await?;
 
-        // Audit (best-effort).
-        self.post_commit_audit(&response_event).await;
-        if let Err(err) = self.state_store.refresh_snapshot().await {
-            warn!(error = %err, "failed to refresh snapshot after hold_response");
-        }
+        // Audit trail — atomic with event (whitepaper §3 invariant 5).
+        let log_index = response_event.log_index as u64;
+        let tree_size = log_index + 1;
+        self.audit_log
+            .append_leaf_in_tx(&mut tx, log_index, &response_event.event_hash)
+            .await
+            .map_err(|e| KernelError::Audit(e.to_string()))?;
+        self.audit_log
+            .make_checkpoint_in_tx(&mut tx, tree_size)
+            .await
+            .map_err(|e| KernelError::Audit(e.to_string()))?;
+
+        tx.commit().await?;
 
         info!(
             hold_id = %hold_id,
@@ -1548,9 +1556,20 @@ impl Kernel {
             self.event_log
                 .append_in_tx(&mut tx, &mut timeout_event)
                 .await?;
-            tx.commit().await?;
 
-            self.post_commit_audit(&timeout_event).await;
+            // Audit trail — atomic with event (whitepaper §3 invariant 5).
+            let t_log_index = timeout_event.log_index as u64;
+            let t_tree_size = t_log_index + 1;
+            self.audit_log
+                .append_leaf_in_tx(&mut tx, t_log_index, &timeout_event.event_hash)
+                .await
+                .map_err(|e| KernelError::Audit(e.to_string()))?;
+            self.audit_log
+                .make_checkpoint_in_tx(&mut tx, t_tree_size)
+                .await
+                .map_err(|e| KernelError::Audit(e.to_string()))?;
+
+            tx.commit().await?;
 
             info!(
                 hold_id = %hold_id,

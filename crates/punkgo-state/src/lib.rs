@@ -6,8 +6,7 @@
 //! - [`EnergyLedger`] — energy balance tracking with atomic reserve/settle
 //! - [`EventLog`] — append-only event log with RFC 8785 canonical JSON hashing
 //! - [`EnvelopeStore`] — authorization envelope lifecycle and budget consumption
-//! - [`StateStore`] — database bootstrap, migrations, and snapshot management
-//! - [`SnapshotInfo`] — cryptographic state snapshot (event count + root hash)
+//! - [`StateStore`] — database bootstrap and migrations
 //! - [`BlobStore`] — content-addressable blob storage (Git-style filesystem CAS)
 //!
 //! All writes go through SQLite transactions to maintain the kernel's
@@ -18,7 +17,6 @@ pub mod blob_store;
 pub mod energy_ledger;
 pub mod envelope_store;
 pub mod event_log;
-pub mod snapshot;
 pub mod store;
 
 pub use actor_store::ActorStore;
@@ -26,5 +24,4 @@ pub use blob_store::BlobStore;
 pub use energy_ledger::{EnergyLedger, EnergyReservation};
 pub use envelope_store::{EnvelopeStore, NewHoldRequest};
 pub use event_log::{EventLog, EventRecord};
-pub use snapshot::SnapshotInfo;
 pub use store::{StatePaths, StateStore};

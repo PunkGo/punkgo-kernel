@@ -5,6 +5,17 @@ All notable changes to PunkGo Kernel will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-02-22
+
+### Fixed
+
+- **Audit atomicity** — event commit and Merkle tree update (append_leaf + make_checkpoint) now execute in the same transaction across all commit paths (finalize, hold_request, hold_response, hold_timeout), fixing a race condition where concurrent writes could produce an inconsistent audit tree (whitepaper §3 invariant 5)
+
+### Removed
+
+- **State snapshot** — removed redundant O(n) integrity hash (`refresh_snapshot`, `compute_snapshot_from_events`, `SnapshotInfo`, `snapshots_root`); audit checkpoint (Merkle tree root) provides strictly stronger guarantees with O(log n) updates. The `snapshot` read query now returns audit checkpoint data for backward compatibility.
+- **PIP-003 draft** — concurrent access is handled by the existing daemon architecture (`punkgo-kerneld`); the remaining audit atomicity fix and snapshot removal are bug fixes, not a new specification
+
 ## [0.2.0] - 2026-02-22
 
 ### Added

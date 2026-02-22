@@ -15,7 +15,7 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
-use sqlx::{Row, SqlitePool};
+use sqlx::{Row, Sqlite, SqlitePool, Transaction};
 use thiserror::Error;
 use tlog_tiles::{checkpoint::Checkpoint, tlog};
 use tracing::debug;
@@ -74,25 +74,35 @@ impl AuditLog {
         }
     }
 
-    /// Called after each event is committed. Appends the leaf hash to the
-    /// Merkle tree and stores all newly computable intermediate node hashes.
+    /// Appends the leaf hash to the Merkle tree within an internal transaction.
     ///
     /// `log_index` is 0-based. `leaf_hash_hex` is the 64-char hex event_hash.
     pub async fn append_leaf(&self, log_index: u64, leaf_hash_hex: &str) -> Result<(), AuditError> {
+        let mut tx = self.pool.begin().await?;
+        self.append_leaf_in_tx(&mut tx, log_index, leaf_hash_hex)
+            .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Appends the leaf hash to the Merkle tree within a caller-provided transaction.
+    pub async fn append_leaf_in_tx(
+        &self,
+        tx: &mut Transaction<'_, Sqlite>,
+        log_index: u64,
+        leaf_hash_hex: &str,
+    ) -> Result<(), AuditError> {
         let leaf = hex_to_hash(leaf_hash_hex)?;
         let n = log_index;
 
-        // Hashes to write: start with the leaf itself.
         let mut to_store: Vec<(u64, tlog::Hash)> = vec![(tlog::stored_hash_index(0, n), leaf)];
         let mut current = leaf;
         let mut level = 0u8;
 
-        // Walk up the tree: while n's bit at `level` is 1, we are the right
-        // child at that level and can compute the parent node hash.
         while (n >> level) & 1 == 1 {
             let n_at_level = n >> level;
             let left_idx = tlog::stored_hash_index(level, n_at_level - 1);
-            let left = self.read_hash(left_idx).await?;
+            let left = self.read_hash_in_tx(&mut *tx, left_idx).await?;
             let parent = tlog::node_hash(left, current);
             level += 1;
             let parent_idx = tlog::stored_hash_index(level, n_at_level >> 1);
@@ -100,25 +110,34 @@ impl AuditLog {
             current = parent;
         }
 
-        // Persist all computed hashes atomically.
-        let mut tx = self.pool.begin().await?;
         for (idx, hash) in to_store {
             sqlx::query("INSERT OR REPLACE INTO audit_hashes (hash_index, hash) VALUES (?1, ?2)")
                 .bind(idx as i64)
                 .bind(hash.0.as_slice())
-                .execute(&mut *tx)
+                .execute(&mut **tx)
                 .await?;
         }
-        tx.commit().await?;
 
         debug!(log_index, "audit leaf appended");
         Ok(())
     }
 
-    /// Generates and persists a checkpoint for the current tree size.
+    /// Generates and persists a checkpoint within an internal transaction.
     /// `tree_size` = log_index + 1 (number of events committed so far).
     pub async fn make_checkpoint(&self, tree_size: u64) -> Result<AuditCheckpoint, AuditError> {
-        let reader = self.load_all_hashes().await?;
+        let mut tx = self.pool.begin().await?;
+        let cp = self.make_checkpoint_in_tx(&mut tx, tree_size).await?;
+        tx.commit().await?;
+        Ok(cp)
+    }
+
+    /// Generates and persists a checkpoint within a caller-provided transaction.
+    pub async fn make_checkpoint_in_tx(
+        &self,
+        tx: &mut Transaction<'_, Sqlite>,
+        tree_size: u64,
+    ) -> Result<AuditCheckpoint, AuditError> {
+        let reader = self.load_all_hashes_in_tx(&mut *tx).await?;
         let root = tlog::tree_hash(tree_size, &reader)?;
         let root_hex = hash_to_hex(&root);
 
@@ -128,17 +147,15 @@ impl AuditLog {
 
         let now = now_millis_string();
         sqlx::query(
-            r#"
-            INSERT OR REPLACE INTO audit_checkpoints
+            "INSERT OR REPLACE INTO audit_checkpoints
                 (tree_size, root_hash, checkpoint_text, created_at)
-            VALUES (?1, ?2, ?3, ?4)
-            "#,
+            VALUES (?1, ?2, ?3, ?4)",
         )
         .bind(tree_size as i64)
         .bind(&root_hex)
         .bind(&cp_text)
         .bind(&now)
-        .execute(&self.pool)
+        .execute(&mut **tx)
         .await?;
 
         debug!(tree_size, root_hash = %root_hex, "checkpoint created");
@@ -212,12 +229,22 @@ impl AuditLog {
             .unwrap_or(0))
     }
 
-    async fn read_hash(&self, idx: u64) -> Result<tlog::Hash, AuditError> {
+    async fn read_hash_in_tx(
+        &self,
+        tx: &mut Transaction<'_, Sqlite>,
+        idx: u64,
+    ) -> Result<tlog::Hash, AuditError> {
         let row = sqlx::query("SELECT hash FROM audit_hashes WHERE hash_index = ?1")
             .bind(idx as i64)
-            .fetch_optional(&self.pool)
+            .fetch_optional(&mut **tx)
             .await?;
+        Self::row_to_hash(row, idx)
+    }
 
+    fn row_to_hash(
+        row: Option<sqlx::sqlite::SqliteRow>,
+        idx: u64,
+    ) -> Result<tlog::Hash, AuditError> {
         match row {
             Some(r) => {
                 let bytes: Vec<u8> = r.get("hash");
@@ -236,7 +263,20 @@ impl AuditLog {
         let rows = sqlx::query("SELECT hash_index, hash FROM audit_hashes ORDER BY hash_index ASC")
             .fetch_all(&self.pool)
             .await?;
+        Ok(Self::rows_to_reader(rows))
+    }
 
+    async fn load_all_hashes_in_tx(
+        &self,
+        tx: &mut Transaction<'_, Sqlite>,
+    ) -> Result<InMemHashReader, AuditError> {
+        let rows = sqlx::query("SELECT hash_index, hash FROM audit_hashes ORDER BY hash_index ASC")
+            .fetch_all(&mut **tx)
+            .await?;
+        Ok(Self::rows_to_reader(rows))
+    }
+
+    fn rows_to_reader(rows: Vec<sqlx::sqlite::SqliteRow>) -> InMemHashReader {
         let map = rows
             .into_iter()
             .map(|r| {
@@ -247,8 +287,7 @@ impl AuditLog {
                 (idx as u64, tlog::Hash(h))
             })
             .collect();
-
-        Ok(InMemHashReader(map))
+        InMemHashReader(map)
     }
 }
 

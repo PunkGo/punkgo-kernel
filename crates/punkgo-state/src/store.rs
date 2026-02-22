@@ -2,19 +2,15 @@ use std::fs::{self, File, OpenOptions};
 use std::path::{Path, PathBuf};
 
 use punkgo_core::errors::{KernelError, KernelResult};
-use sha2::{Digest, Sha256};
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 use sqlx::{Row, SqlitePool};
 use tracing::{info, warn};
-
-use crate::snapshot::SnapshotInfo;
 
 #[derive(Clone)]
 pub struct StatePaths {
     pub root: PathBuf,
     pub workspace_root: PathBuf,
     pub quarantine_root: PathBuf,
-    pub snapshots_root: PathBuf,
     pub blobs_root: PathBuf,
     pub db_path: PathBuf,
 }
@@ -32,13 +28,11 @@ impl StateStore {
         let workspace_root = root.join("workspaces");
         let quarantine_root = root.join("quarantine");
         let event_log_root = root.join("event_log");
-        let snapshots_root = root.join("snapshots");
         let blobs_root = root.join("blobs");
 
         fs::create_dir_all(&workspace_root)?;
         fs::create_dir_all(&quarantine_root)?;
         fs::create_dir_all(&event_log_root)?;
-        fs::create_dir_all(&snapshots_root)?;
         fs::create_dir_all(&blobs_root)?;
 
         let lock_path = root.join("kernel.lock");
@@ -78,7 +72,6 @@ impl StateStore {
                 root,
                 workspace_root,
                 quarantine_root,
-                snapshots_root,
                 blobs_root,
                 db_path,
             },
@@ -105,17 +98,6 @@ impl StateStore {
             .fetch_optional(&self.pool)
             .await?;
         Ok(row.is_some())
-    }
-
-    pub async fn refresh_snapshot(&self) -> KernelResult<SnapshotInfo> {
-        let snapshot = self.compute_snapshot_from_events().await?;
-        self.persist_snapshot(&snapshot).await?;
-        info!(
-            event_count = snapshot.event_count,
-            snapshot_hash = %snapshot.hash,
-            "snapshot refreshed"
-        );
-        Ok(snapshot)
     }
 
     async fn init_schema(pool: &SqlitePool) -> KernelResult<()> {
@@ -369,17 +351,15 @@ impl StateStore {
             )));
         }
 
-        self.validate_snapshot_integrity().await?;
         self.validate_audit_coverage().await?;
 
         info!("startup integrity checks passed");
         Ok(())
     }
 
-    /// P3: Verify audit log coverage — the latest checkpoint's tree_size must
+    /// Verify audit log coverage — the latest checkpoint's tree_size must
     /// equal the total event count, meaning every committed event is captured
-    /// in the Merkle tree. In dev mode this emits a warning rather than
-    /// refusing to start; it returns an error only if the DB query fails.
+    /// in the Merkle tree. Emits a warning on gap rather than refusing to start.
     async fn validate_audit_coverage(&self) -> KernelResult<()> {
         let event_count: i64 = sqlx::query("SELECT COUNT(*) AS cnt FROM events")
             .fetch_one(&self.pool)
@@ -418,83 +398,10 @@ impl StateStore {
         Ok(())
     }
 
-    async fn validate_snapshot_integrity(&self) -> KernelResult<()> {
-        let snapshot = self.compute_snapshot_from_events().await?;
-        let stored_hash = self.get_meta("snapshot_hash").await?;
-
-        if let Some(existing_hash) = stored_hash {
-            if existing_hash != snapshot.hash {
-                return Err(KernelError::PolicyViolation(format!(
-                    "state integrity violation: snapshot hash mismatch stored={} computed={}",
-                    existing_hash, snapshot.hash
-                )));
-            }
-            return Ok(());
-        }
-
-        self.persist_snapshot(&snapshot).await?;
-        Ok(())
-    }
-
-    async fn compute_snapshot_from_events(&self) -> KernelResult<SnapshotInfo> {
-        let rows = sqlx::query(
-            r#"
-            SELECT log_index, event_hash
-            FROM events
-            ORDER BY log_index ASC
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await?;
-
-        let now = now_millis_string();
-        if rows.is_empty() {
-            return Ok(SnapshotInfo::empty(now));
-        }
-
-        let mut hasher = Sha256::new();
-        for row in &rows {
-            let line = format!(
-                "{}|{}\n",
-                row.get::<i64, _>("log_index"),
-                row.get::<String, _>("event_hash"),
-            );
-            hasher.update(line.as_bytes());
-        }
-        let hash = bytes_to_hex(&hasher.finalize());
-
-        Ok(SnapshotInfo {
-            event_count: rows.len() as i64,
-            hash,
-            generated_at: now,
-        })
-    }
-
-    async fn persist_snapshot(&self, snapshot: &SnapshotInfo) -> KernelResult<()> {
-        let snapshot_path = self.paths.snapshots_root.join("latest.json");
-        let snapshot_json = serde_json::to_string_pretty(snapshot)?;
-        fs::write(snapshot_path, snapshot_json)?;
-
-        self.set_meta("snapshot_hash", &snapshot.hash).await?;
-        self.set_meta("snapshot_event_count", &snapshot.event_count.to_string())
-            .await?;
-        self.set_meta("snapshot_updated_at", &snapshot.generated_at)
-            .await?;
-        Ok(())
-    }
-
     /// Records a governance policy version change in system_meta.
     /// Called by the kernel whenever a `system/policy` Create event is committed.
     pub async fn set_policy_version(&self, version: &str) -> KernelResult<()> {
         self.set_meta("policy_version", version).await
-    }
-
-    async fn get_meta(&self, key: &str) -> KernelResult<Option<String>> {
-        let row = sqlx::query("SELECT value FROM system_meta WHERE key = ?1")
-            .bind(key)
-            .fetch_optional(&self.pool)
-            .await?;
-        Ok(row.map(|r| r.get("value")))
     }
 
     async fn set_meta(&self, key: &str, value: &str) -> KernelResult<()> {
@@ -524,14 +431,4 @@ fn now_millis_string() -> String {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();
     now.as_millis().to_string()
-}
-
-fn bytes_to_hex(bytes: &[u8]) -> String {
-    const LUT: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for &b in bytes {
-        out.push(LUT[(b >> 4) as usize] as char);
-        out.push(LUT[(b & 0x0f) as usize] as char);
-    }
-    out
 }
