@@ -14,6 +14,9 @@
 //! All types in this crate are serializable and form the shared vocabulary between
 //! the kernel runtime, state persistence, and CLI client.
 
+/// Kernel version, inherited from workspace Cargo.toml.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 pub mod action;
 pub mod actor;
 pub mod boundary;

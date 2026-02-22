@@ -71,7 +71,7 @@ Results are written to `results/` as JSON files, plus a `SUMMARY.md` overview.
 
 | Benchmark | Measures |
 |-----------|----------|
-| pipeline_latency | Per-action-type latency (median, P95, min, max) |
+| pipeline_latency | Per-action-type latency including execute (median, P95, min, max) |
 | merkle_performance | Proof generation time and size across log sizes 10–1000 |
-| throughput | Sustained actions/sec over 5-second windows |
+| throughput | Sustained actions/sec (observe, create, mutate, execute, mixed) over 5-second windows |
 | hold_latency | Hold trigger, read, approve, reject latency breakdown |

@@ -43,7 +43,7 @@ fn main() {
         },
         "software": {
             "rust_version": rustc_version,
-            "punkgo_version": "0.1.0",
+            "punkgo_version": punkgo_core::VERSION,
             "git_commit": git_commit,
             "storage_backend": "SQLite (WAL mode)"
         },

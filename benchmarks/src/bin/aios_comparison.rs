@@ -9,7 +9,7 @@ fn main() {
                 "dimension": "Trusted Computing Base (TCB)",
                 "aios": "LLM (non-deterministic, unverifiable)",
                 "punkgo_claim": "Kernel (deterministic, formally verifiable)",
-                "punkgo_evidence": "Kernel is a Rust user-space process. All security decisions (boundary check, energy check, hold trigger) are deterministic code paths in kernel.rs. No LLM in the TCB. Pipeline: validate -> quote -> reserve -> payload_validate -> settle -> append is a fixed, synchronous, linear sequence (PIP-002: kernel does not execute, only records).",
+                "punkgo_evidence": "Kernel is a Rust user-space process. All security decisions (boundary check, energy check, hold trigger) are deterministic code paths in kernel.rs. No LLM in the TCB. Pipeline: validate -> quote -> reserve -> validate_payload -> settle -> append -> receipt is a fixed, synchronous, linear sequence (PIP-002: kernel does not execute, only records).",
                 "code_references": [
                     "crates/punkgo-runtime/src/kernel.rs — submit_action() pipeline",
                     "crates/punkgo-core/src/boundary.rs — check_writable_boundary()",
@@ -91,7 +91,7 @@ fn main() {
                 ]
             }
         ],
-        "notes": "AIOS assessment based on Mei et al. 'AIOS: LLM Agent Operating System' (COLM 2025). PunkGo evidence is from direct source code inspection of the v0.1.0 codebase."
+        "notes": "AIOS assessment based on Mei et al. 'AIOS: LLM Agent Operating System' (COLM 2025). PunkGo evidence is from direct source code inspection of the v0.2.1 codebase."
     });
 
     write_result("aios_comparison.json", &result);

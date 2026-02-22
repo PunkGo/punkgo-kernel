@@ -74,7 +74,7 @@ fn main() {
     if let Some(lat) = read_result("pipeline_latency.json") {
         md.push_str("| Action Type | Median (us) | P95 (us) | Min (us) | Max (us) |\n");
         md.push_str("|-------------|-------------|----------|----------|----------|\n");
-        for action_type in ["observe", "create", "mutate", "read_events"] {
+        for action_type in ["observe", "create", "mutate", "execute", "read_events"] {
             if let Some(stats) = lat["results"].get(action_type) {
                 md.push_str(&format!(
                     "| {} | {:.0} | {:.0} | {} | {} |\n",
@@ -120,7 +120,13 @@ fn main() {
     if let Some(tp) = read_result("throughput.json") {
         md.push_str("| Scenario | Actions/sec | Total Actions |\n");
         md.push_str("|----------|-------------|---------------|\n");
-        for scenario in ["observe_only", "create_only", "mutate_only", "mixed"] {
+        for scenario in [
+            "observe_only",
+            "create_only",
+            "mutate_only",
+            "execute_only",
+            "mixed",
+        ] {
             if let Some(s) = tp["results"].get(scenario) {
                 md.push_str(&format!(
                     "| {} | {:.0} | {} |\n",
@@ -185,6 +191,7 @@ fn main() {
     md.push_str("| prev_hash chain (Def. 7) | Replaced by Merkle tree | Hash chain via tlog, not per-event prev_hash field |\n");
     md.push_str("| Hardware auto-detection (INT8 TOPS) | Config only | luminosity_source always 'config', no hardware probe |\n");
     md.push_str("| Execute backends | Actor responsibility (PIP-002) | Kernel validates payload, does not execute |\n");
+    md.push_str("| Snapshot refresh | Removed (v0.2.1) | Redundant with Merkle audit checkpoint; O(log n) replaces O(n) |\n");
     md.push_str(
         "| Formal verification (Verus) | Future work | Paper proofs only, no machine-checked |\n",
     );
@@ -198,10 +205,10 @@ fn main() {
     md.push_str("- Each benchmark uses a fresh kernel instance (clean SQLite database).\n");
     md.push_str("- Merkle proof generation time includes O(n) hash loading from SQLite (load_all_hashes). The actual proof path computation is O(log n).\n");
     md.push_str(
-        "- Throughput degrades over time due to O(n) snapshot refresh after each commit.\n",
+        "- PIP-002: Execute is actor-submitted result. Kernel validates payload format, no process spawn.\n",
     );
     md.push_str(
-        "- PIP-002: Execute is actor-submitted result. Kernel validates payload format, no process spawn.\n",
+        "- v0.2.1: Audit checkpoint is now atomic with event commit (in-transaction). Snapshot refresh removed.\n",
     );
     md.push_str(
         "- Hold workflow timing excludes human decision time (measures mechanical latency only).\n",
