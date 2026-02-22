@@ -153,6 +153,91 @@ async fn main() {
     let actual_deducted = hold_balance_before - hold_balance_after;
     let commitment_cost_correct = actual_deducted == expected_commitment_cost;
 
+    // ========== Part 3: Execute energy test (PIP-002: cost = 25 + output_bytes/256) ==========
+    let (kernel3, _state3) = bootstrap_kernel("bench-inv5-exec").await;
+
+    create_agent(
+        &kernel3,
+        "exec-energy-agent",
+        100,
+        json!([{"target": "workspace/**", "actions": ["execute"]}]),
+    )
+    .await;
+
+    grant_envelope(
+        &kernel3,
+        "exec-energy-agent",
+        100,
+        json!(["workspace/**"]),
+        json!(["execute"]),
+        None,
+        None,
+    )
+    .await;
+
+    let (exec_initial_balance, _) = query_energy(&kernel3, "exec-energy-agent").await;
+
+    // output_bytes = 1024 → cost = 25 + 1024/256 = 29
+    let expected_exec_cost: i64 = 29;
+    let mut exec_actions_log: Vec<serde_json::Value> = Vec::new();
+    let mut successful_executes: i64 = 0;
+    let mut exec_insufficient_triggered = false;
+
+    for i in 0..5 {
+        let (balance_before, _) = query_energy(&kernel3, "exec-energy-agent").await;
+        let resp = submit_raw(
+            &kernel3,
+            make_action(
+                "exec-energy-agent",
+                ActionType::Execute,
+                &format!("workspace/exec/{i}"),
+                json!({
+                    "input_oid": format!("sha256:{:0>64x}", i),
+                    "output_oid": format!("sha256:{:0>64x}", i + 100),
+                    "exit_code": 0,
+                    "artifact_hash": format!("sha256:{:0>64x}", i + 200),
+                    "output_bytes": 1024
+                }),
+            ),
+        )
+        .await;
+
+        let ok = resp.status == "ok";
+        let (balance_after, _) = query_energy(&kernel3, "exec-energy-agent").await;
+
+        if ok {
+            successful_executes += 1;
+        } else {
+            exec_insufficient_triggered = true;
+            exec_actions_log.push(json!({
+                "seq": i,
+                "type": "execute",
+                "expected_cost": expected_exec_cost,
+                "balance_before": balance_before,
+                "balance_after": balance_after,
+                "success": false,
+                "error": "InsufficientEnergy"
+            }));
+            break;
+        }
+
+        exec_actions_log.push(json!({
+            "seq": i,
+            "type": "execute",
+            "expected_cost": expected_exec_cost,
+            "actual_cost": balance_before - balance_after,
+            "balance_before": balance_before,
+            "balance_after": balance_after,
+            "success": true
+        }));
+    }
+
+    let (exec_final_balance, _) = query_energy(&kernel3, "exec-energy-agent").await;
+    // 100 / 29 = 3 successful, remainder 100 - 87 = 13
+    let exec_expected_final = exec_initial_balance - (successful_executes * expected_exec_cost);
+    let exec_balance_correct = exec_final_balance == exec_expected_final;
+    let exec_balance_never_negative = exec_final_balance >= 0;
+
     let elapsed_ms = start.elapsed().as_millis();
 
     let all_pass = insufficient_triggered
@@ -160,7 +245,10 @@ async fn main() {
         && hold_triggered
         && hold_reject_ok
         && commitment_cost_correct
-        && hold_reserved_after == 0;
+        && hold_reserved_after == 0
+        && exec_insufficient_triggered
+        && exec_balance_correct
+        && exec_balance_never_negative;
 
     let result = json!({
         "test": "INV-5 Energy Conservation",
@@ -189,8 +277,22 @@ async fn main() {
             "remaining_balance": hold_balance_after,
             "reserved_after_reject": hold_reserved_after,
         },
+        "execute_energy_test": {
+            "initial_balance": exec_initial_balance,
+            "cost_formula": "25 + output_bytes / 256",
+            "output_bytes": 1024,
+            "expected_cost_per_execute": expected_exec_cost,
+            "successful_executes": successful_executes,
+            "total_consumed": successful_executes * expected_exec_cost,
+            "final_balance": exec_final_balance,
+            "expected_final_balance": exec_expected_final,
+            "balance_correct": exec_balance_correct,
+            "insufficient_energy_enforced": exec_insufficient_triggered,
+            "balance_never_negative": exec_balance_never_negative,
+            "actions": exec_actions_log
+        },
         "timing_ms": elapsed_ms,
-        "notes": "Energy balance never goes negative. InsufficientEnergy is enforced at the reserve step. Hold reject charges 20% commitment cost (ceil rounding)."
+        "notes": "Energy balance never goes negative. InsufficientEnergy is enforced at the reserve step. Hold reject charges 20% commitment cost (ceil rounding). Execute cost follows PIP-002 §4: 25 + output_bytes/256."
     });
 
     write_result("inv5_energy.json", &result);

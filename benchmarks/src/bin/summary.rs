@@ -191,6 +191,9 @@ fn main() {
     md.push_str("| prev_hash chain (Def. 7) | Replaced by Merkle tree | Hash chain via tlog, not per-event prev_hash field |\n");
     md.push_str("| Hardware auto-detection (INT8 TOPS) | Config only | luminosity_source always 'config', no hardware probe |\n");
     md.push_str("| Execute backends | Actor responsibility (PIP-002) | Kernel validates payload, does not execute |\n");
+    md.push_str(
+        "| BlobStore | Removed from kernel (PIP-002) | Actor manages blob storage externally |\n",
+    );
     md.push_str("| Snapshot refresh | Removed (v0.2.1) | Redundant with Merkle audit checkpoint; O(log n) replaces O(n) |\n");
     md.push_str(
         "| Formal verification (Verus) | Future work | Paper proofs only, no machine-checked |\n",

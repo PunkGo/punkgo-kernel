@@ -178,7 +178,7 @@ async fn main() {
                 "throughput": mixed_tps
             }
         },
-        "notes": "Sequential single-writer model (single Committer). SQLite WAL mode. Performance includes validate + quote + reserve + validate_payload + settle + append (with in-transaction audit checkpoint). Execute is PIP-002 style: actor-submitted result, kernel validates payload format only."
+        "notes": "Sequential single-writer model (single Committer). SQLite WAL mode. Performance includes validate + quote + reserve + validate_payload + settle + append + receipt + post-commit audit (Merkle checkpoint)."
     });
 
     write_result("throughput.json", &result);

@@ -147,9 +147,9 @@ async fn main() {
         },
         "per_step_breakdown": {
             "available": false,
-            "note": "Kernel does not expose per-step tracing. End-to-end latency includes: validate + quote + reserve + validate_payload + settle + append (with in-transaction audit checkpoint)."
+            "note": "Kernel does not expose per-step tracing. End-to-end latency includes: validate + quote + reserve + validate_payload + settle + append + receipt + post-commit audit (Merkle checkpoint)."
         },
-        "notes": "PIP-002: Execute is actor-submitted result (no OS process spawn). Kernel validates payload format (input_oid, output_oid, exit_code, artifact_hash) and records the event. Each action type measured with a fresh kernel instance."
+        "notes": "Each action type measured with a fresh kernel instance. End-to-end latency includes: validate + quote + reserve + validate_payload + settle + append + receipt + post-commit audit. PIP-002: Execute is actor-submitted result (no OS process spawn), kernel validates payload format only."
     });
 
     write_result("pipeline_latency.json", &result);

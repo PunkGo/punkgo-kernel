@@ -13,7 +13,7 @@ async fn main() {
         &kernel,
         "comp-agent",
         1_000_000,
-        json!([{"target": "workspace/**", "actions": ["create", "mutate"]}]),
+        json!([{"target": "workspace/**", "actions": ["create", "mutate", "execute"]}]),
     )
     .await;
 
@@ -22,7 +22,7 @@ async fn main() {
         "comp-agent",
         500_000,
         json!(["workspace/**"]),
-        json!(["create", "mutate"]),
+        json!(["create", "mutate", "execute"]),
         Some(json!([{"target": "workspace/sensitive/*", "actions": ["mutate"]}])),
         None,
     )
@@ -97,7 +97,33 @@ async fn main() {
             .push(json!({"type": "mutate", "target": format!("workspace/allowed/{i}"), "ok": ok}));
     }
 
-    // 4. Mutate actions (agent, OUT of boundary) — 5 (should fail)
+    // 4. Execute actions (agent, PIP-002 payload submission) — 5
+    for i in 0..5 {
+        let resp = submit_raw(
+            &kernel,
+            make_action(
+                "comp-agent",
+                ActionType::Execute,
+                &format!("workspace/exec/{i}"),
+                json!({
+                    "input_oid": format!("sha256:{:0>64x}", i),
+                    "output_oid": format!("sha256:{:0>64x}", i + 100),
+                    "exit_code": 0,
+                    "artifact_hash": format!("sha256:{:0>64x}", i + 200),
+                    "output_bytes": 512
+                }),
+            ),
+        )
+        .await;
+        let ok = resp.status == "ok";
+        if ok {
+            successful += 1;
+        }
+        submitted
+            .push(json!({"type": "execute", "target": format!("workspace/exec/{i}"), "ok": ok}));
+    }
+
+    // 5. Mutate actions (agent, OUT of boundary) — 5 (should fail)
     for i in 0..5 {
         let resp = submit_raw(
             &kernel,
@@ -118,7 +144,7 @@ async fn main() {
         );
     }
 
-    // 5. Hold test: trigger hold
+    // 6. Hold test: trigger hold
     let hold_resp = submit_raw(
         &kernel,
         make_action(
@@ -137,7 +163,7 @@ async fn main() {
         String::new()
     };
 
-    // 6. Reject the hold
+    // 7. Reject the hold
     let hold_response_ok = if hold_triggered {
         let resp = submit_raw(
             &kernel,
@@ -166,6 +192,7 @@ async fn main() {
         .collect();
     let hold_request_recorded = event_types.contains(&"hold_request");
     let hold_response_recorded = event_types.contains(&"hold_response");
+    let execute_recorded = event_types.iter().filter(|&&t| t == "execute").count();
 
     // Count events that correspond to our test actions (exclude setup events)
     let new_events = total_events - events_before;
@@ -174,7 +201,7 @@ async fn main() {
 
     let result = json!({
         "test": "INV-2 Completeness",
-        "status": if hold_request_recorded && hold_response_recorded { "PASS" } else { "PARTIAL" },
+        "status": if hold_request_recorded && hold_response_recorded && execute_recorded == 5 { "PASS" } else { "PARTIAL" },
         "actions_submitted": submitted.len(),
         "successful_actions": successful,
         "failed_boundary_violations": failed_boundary,
@@ -188,9 +215,13 @@ async fn main() {
             "hold_response_recorded": hold_response_recorded,
             "hold_response_ok": hold_response_ok,
         },
+        "execute_test": {
+            "execute_events_recorded": execute_recorded,
+            "expected": 5,
+        },
         "submitted_actions": submitted,
         "timing_ms": elapsed_ms,
-        "notes": "Boundary violations (system/* by non-root) are rejected BEFORE the append step, so they produce no event. This is correct: only actions that pass validation enter the pipeline and get recorded. Hold events (hold_request, hold_response) are always recorded."
+        "notes": "Boundary violations (system/* by non-root) are rejected BEFORE the append step, so they produce no event. This is correct: only actions that pass validation enter the pipeline and get recorded. Hold events (hold_request, hold_response) are always recorded. Execute actions (PIP-002) follow the same pipeline and produce events."
     });
 
     write_result("inv2_completeness.json", &result);
