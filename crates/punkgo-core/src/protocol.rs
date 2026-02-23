@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// IPC request envelope — the top-level structure sent from CLI to kernel daemon.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequestEnvelope {
     pub request_id: String,
     #[serde(rename = "type")]
@@ -12,7 +12,7 @@ pub struct RequestEnvelope {
 }
 
 /// The three request types supported by the kernel.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RequestType {
     Quote,
@@ -21,7 +21,7 @@ pub enum RequestType {
 }
 
 /// IPC response envelope — returned from kernel daemon to CLI client.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResponseEnvelope {
     pub request_id: String,
     pub status: String,
