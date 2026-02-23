@@ -32,14 +32,9 @@ pub struct KernelConfig {
 
 impl Default for KernelConfig {
     fn default() -> Self {
-        #[cfg(windows)]
-        let endpoint = r"\\.\pipe\punkgo-kernel".to_string();
-        #[cfg(unix)]
-        let endpoint = "state/punkgo.sock".to_string();
-
         Self {
             state_dir: PathBuf::from("state"),
-            ipc_endpoint: endpoint,
+            ipc_endpoint: "punkgo-kernel".to_string(),
         }
     }
 }

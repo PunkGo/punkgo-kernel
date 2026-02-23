@@ -56,10 +56,16 @@ impl StateStore {
             .filename(&db_path)
             .create_if_missing(true)
             .journal_mode(SqliteJournalMode::Wal)
-            .synchronous(SqliteSynchronous::Full);
+            .synchronous(SqliteSynchronous::Full)
+            .busy_timeout(std::time::Duration::from_secs(5));
+
+        let max_conn = std::thread::available_parallelism()
+            .map(|n| n.get() as u32)
+            .unwrap_or(8)
+            .max(8);
 
         let pool = SqlitePoolOptions::new()
-            .max_connections(8)
+            .max_connections(max_conn)
             .connect_with(connect_options)
             .await?;
 

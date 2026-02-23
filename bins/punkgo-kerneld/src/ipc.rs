@@ -1,48 +1,33 @@
 use std::sync::Arc;
 
+use interprocess::local_socket::{
+    GenericFilePath, GenericNamespaced, ListenerOptions, Name, ToFsName, ToNsName,
+    traits::tokio::Listener as _,
+};
 use punkgo_core::protocol::{RequestEnvelope, ResponseEnvelope};
 use punkgo_runtime::Kernel;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tracing::{error, info, warn};
 
-#[cfg(unix)]
-pub async fn run_ipc_server(kernel: Arc<Kernel>, endpoint: &str) -> std::io::Result<()> {
-    use tokio::net::UnixListener;
-
-    let socket_path = std::path::Path::new(endpoint);
-    if let Some(parent) = socket_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    if socket_path.exists() {
-        std::fs::remove_file(socket_path)?;
-    }
-
-    let listener = UnixListener::bind(socket_path)?;
-    info!(endpoint = endpoint, "unix IPC server listening");
-
-    loop {
-        let (stream, _) = listener.accept().await?;
-        let kernel = Arc::clone(&kernel);
-        tokio::spawn(async move {
-            if let Err(err) = handle_connection(stream, kernel).await {
-                warn!(error = %err, "unix IPC client disconnected with error");
-            }
-        });
+fn endpoint_to_name(endpoint: &str) -> std::io::Result<Name<'_>> {
+    if endpoint.contains('/') || endpoint.contains('\\') {
+        endpoint.to_fs_name::<GenericFilePath>()
+    } else {
+        endpoint.to_ns_name::<GenericNamespaced>()
     }
 }
 
-#[cfg(windows)]
 pub async fn run_ipc_server(kernel: Arc<Kernel>, endpoint: &str) -> std::io::Result<()> {
-    use tokio::net::windows::named_pipe::ServerOptions;
+    let name = endpoint_to_name(endpoint)?;
+    let listener = ListenerOptions::new().name(name).create_tokio()?;
+    info!(endpoint = endpoint, "IPC server listening");
 
-    info!(endpoint = endpoint, "named pipe IPC server listening");
     loop {
-        let server = ServerOptions::new().create(endpoint)?;
-        server.connect().await?;
+        let conn = listener.accept().await?;
         let kernel = Arc::clone(&kernel);
         tokio::spawn(async move {
-            if let Err(err) = handle_connection(server, kernel).await {
-                warn!(error = %err, "named pipe IPC client disconnected with error");
+            if let Err(err) = handle_connection(conn, kernel).await {
+                warn!(error = %err, "IPC client disconnected with error");
             }
         });
     }

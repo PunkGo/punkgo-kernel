@@ -26,15 +26,7 @@ impl TestStateDir {
     }
 
     pub fn ipc_endpoint(&self) -> String {
-        #[cfg(windows)]
-        {
-            format!(r"\\.\pipe\punkgo-test-{}", Uuid::new_v4())
-        }
-
-        #[cfg(unix)]
-        {
-            self.path.join("punkgo.sock").display().to_string()
-        }
+        format!("punkgo-test-{}", Uuid::new_v4())
     }
 }
 

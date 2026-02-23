@@ -11,7 +11,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 authors = ["Felix <feijiu@punkgo.ai>"]
 license = "MIT"
@@ -35,3 +35,4 @@ globset = "0.4"
 toml = "0.8"
 tempfile = "3.16"
 uuid = { version = "1.21.0", features = ["v4", "serde"] }
+interprocess = { version = "2.4", features = ["tokio"] }

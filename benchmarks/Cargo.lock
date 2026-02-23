@@ -937,7 +937,7 @@ dependencies = [
 
 [[package]]
 name = "punkgo-audit"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -967,7 +967,7 @@ dependencies = [
 
 [[package]]
 name = "punkgo-core"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "globset",
  "serde",
@@ -980,7 +980,7 @@ dependencies = [
 
 [[package]]
 name = "punkgo-runtime"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "punkgo-audit",
  "punkgo-core",
@@ -995,7 +995,7 @@ dependencies = [
 
 [[package]]
 name = "punkgo-state"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "punkgo-core",
  "serde",
@@ -1007,7 +1007,7 @@ dependencies = [
 
 [[package]]
 name = "punkgo-testkit"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "punkgo-core",
  "serde_json",

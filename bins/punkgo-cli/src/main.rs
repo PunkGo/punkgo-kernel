@@ -352,33 +352,23 @@ fn build_raw_request(args: Vec<String>) -> Result<Value> {
     Ok(request)
 }
 
-#[cfg(unix)]
 fn send_request(endpoint: &str, request_line: &str) -> Result<String> {
-    use std::os::unix::net::UnixStream;
+    use interprocess::local_socket::{
+        GenericFilePath, GenericNamespaced, Name, Stream, ToFsName, ToNsName, traits::Stream as _,
+    };
 
-    let mut stream =
-        UnixStream::connect(endpoint).with_context(|| format!("connect to {endpoint} failed"))?;
-    stream.write_all(request_line.as_bytes())?;
-    stream.write_all(b"\n")?;
-    stream.flush()?;
-
-    let mut reader = BufReader::new(stream);
-    let mut resp = String::new();
-    let n = reader.read_line(&mut resp)?;
-    if n == 0 {
-        bail!("empty response from kernel");
+    fn endpoint_to_name(endpoint: &str) -> std::io::Result<Name<'_>> {
+        if endpoint.contains('/') || endpoint.contains('\\') {
+            endpoint.to_fs_name::<GenericFilePath>()
+        } else {
+            endpoint.to_ns_name::<GenericNamespaced>()
+        }
     }
-    Ok(resp.trim().to_string())
-}
 
-#[cfg(windows)]
-fn send_request(endpoint: &str, request_line: &str) -> Result<String> {
-    let mut stream = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(endpoint)
-        .with_context(|| format!("open named pipe {endpoint} failed"))?;
-
+    let name =
+        endpoint_to_name(endpoint).with_context(|| format!("invalid endpoint name: {endpoint}"))?;
+    let mut stream =
+        Stream::connect(name).with_context(|| format!("connect to {endpoint} failed"))?;
     stream.write_all(request_line.as_bytes())?;
     stream.write_all(b"\n")?;
     stream.flush()?;
@@ -393,14 +383,7 @@ fn send_request(endpoint: &str, request_line: &str) -> Result<String> {
 }
 
 fn default_endpoint() -> String {
-    #[cfg(windows)]
-    {
-        r"\\.\pipe\punkgo-kernel".to_string()
-    }
-    #[cfg(unix)]
-    {
-        "state/punkgo.sock".to_string()
-    }
+    "punkgo-kernel".to_string()
 }
 
 fn request_id() -> String {
