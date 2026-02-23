@@ -9,7 +9,7 @@ const PROOF_ITERATIONS: usize = 10;
 async fn main() {
     println!("Merkle Performance Benchmark");
 
-    let log_sizes: Vec<usize> = vec![10, 50, 100, 500, 1000];
+    let log_sizes: Vec<usize> = vec![10, 50, 100, 500, 1_000, 10_000];
     let mut data_points: Vec<serde_json::Value> = Vec::new();
 
     for &target_size in &log_sizes {

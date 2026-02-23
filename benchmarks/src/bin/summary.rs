@@ -74,7 +74,7 @@ fn main() {
     if let Some(lat) = read_result("pipeline_latency.json") {
         md.push_str("| Action Type | Median (us) | P95 (us) | Min (us) | Max (us) |\n");
         md.push_str("|-------------|-------------|----------|----------|----------|\n");
-        for action_type in ["observe", "create", "mutate", "execute", "read_events"] {
+        for action_type in ["observe", "create", "mutate", "execute"] {
             if let Some(stats) = lat["results"].get(action_type) {
                 md.push_str(&format!(
                     "| {} | {:.0} | {:.0} | {} | {} |\n",
@@ -85,6 +85,14 @@ fn main() {
                     stats["max_us"],
                 ));
             }
+        }
+        // read_events is a query, not a pipeline action — report separately
+        if let Some(stats) = lat["results"].get("read_events") {
+            md.push_str(&format!(
+                "\n**Read query** (not a pipeline action): median {:.0} us, P95 {:.0} us\n",
+                stats["median_us"].as_f64().unwrap_or(0.0),
+                stats["p95_us"].as_f64().unwrap_or(0.0),
+            ));
         }
     } else {
         md.push_str("*pipeline_latency.json not found*\n");
@@ -144,15 +152,15 @@ fn main() {
     // ===== Hold Workflow =====
     md.push_str("### Hold Workflow Latency\n\n");
     if let Some(hold) = read_result("hold_latency.json") {
-        md.push_str("| Phase | Median (us) | P95 (us) |\n");
+        md.push_str("| Phase | Median (us) | Max (us) |\n");
         md.push_str("|-------|-------------|----------|\n");
         for phase in ["hold_trigger", "holds_pending_read", "approve", "reject"] {
             if let Some(s) = hold["results"].get(phase) {
                 md.push_str(&format!(
-                    "| {} | {:.0} | {:.0} |\n",
+                    "| {} | {:.0} | {} |\n",
                     phase,
                     s["median_us"].as_f64().unwrap_or(0.0),
-                    s["p95_us"].as_f64().unwrap_or(0.0),
+                    s["max_us"],
                 ));
             }
         }
@@ -188,7 +196,7 @@ fn main() {
     md.push_str("## Implementation Gaps\n\n");
     md.push_str("| Paper Concept | Status | Notes |\n");
     md.push_str("|---------------|--------|-------|\n");
-    md.push_str("| prev_hash chain (Def. 7) | Replaced by Merkle tree | Hash chain via tlog, not per-event prev_hash field |\n");
+    md.push_str("| prev_hash chain | Replaced by Merkle tree | Hash chain via tlog, not per-event prev_hash field |\n");
     md.push_str("| Hardware auto-detection (INT8 TOPS) | Config only | luminosity_source always 'config', no hardware probe |\n");
     md.push_str("| Execute backends | Actor responsibility (PIP-002) | Kernel validates payload, does not execute |\n");
     md.push_str(
