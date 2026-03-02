@@ -4,3 +4,6 @@
 todo
 nul
 paper
+docs/*
+!docs/PIP-*.md
+!docs/PunkGo_Whitepaper_*.md

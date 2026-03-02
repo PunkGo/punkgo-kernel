@@ -1,6 +1,6 @@
 {
   "name": "punkgo-kernel",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "description": "PunkGo Local Sovereignty Compute Kernel — a single-writer, append-only event system implementing the Right to History. The kernel is a committer (not executor): it validates, records, and proves actions. All operations go through IPC (Unix socket / Windows named pipe) as JSON request/response envelopes.",
   "transport": {
     "protocol": "ipc",
