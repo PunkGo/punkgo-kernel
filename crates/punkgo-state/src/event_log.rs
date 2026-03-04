@@ -229,6 +229,87 @@ impl EventLog {
         Ok(events)
     }
 
+    /// General-purpose event query with composable filters.
+    ///
+    /// All filter fields are optional and combined with AND logic:
+    /// - `actor_id`: restrict to a specific actor
+    /// - `before_index`: only events with log_index < value (for backward pagination)
+    /// - `after_index`: only events with log_index > value (for forward pagination)
+    /// - `limit`: max results (clamped by caller; this method does not clamp)
+    ///
+    /// Returns events ordered by log_index descending (newest first).
+    pub async fn query(
+        &self,
+        actor_id: Option<&str>,
+        before_index: Option<i64>,
+        after_index: Option<i64>,
+        limit: i64,
+    ) -> KernelResult<Vec<EventRecord>> {
+        // Build WHERE clauses dynamically. We use a Vec to keep things clean
+        // and avoid the NULL-parameter anti-pattern that defeats index usage.
+        let mut conditions: Vec<String> = Vec::new();
+        if actor_id.is_some() {
+            conditions.push("actor_id = ?".into());
+        }
+        if before_index.is_some() {
+            conditions.push("log_index < ?".into());
+        }
+        if after_index.is_some() {
+            conditions.push("log_index > ?".into());
+        }
+
+        let where_clause = if conditions.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", conditions.join(" AND "))
+        };
+
+        let sql = format!(
+            r#"SELECT id, log_index, event_hash, actor_id, action_type, target, payload,
+                      payload_hash, artifact_hash, reserved_energy, settled_energy, timestamp
+               FROM events
+               {where_clause}
+               ORDER BY log_index DESC
+               LIMIT ?"#
+        );
+
+        let mut q = sqlx::query(&sql);
+        if let Some(a) = actor_id {
+            q = q.bind(a.to_string());
+        }
+        if let Some(b) = before_index {
+            q = q.bind(b);
+        }
+        if let Some(a) = after_index {
+            q = q.bind(a);
+        }
+        q = q.bind(limit);
+
+        let rows = q.fetch_all(&self.pool).await?;
+
+        let events = rows
+            .into_iter()
+            .map(|row| {
+                let payload_str: String = row.get("payload");
+                EventRecord {
+                    id: row.get("id"),
+                    log_index: row.get("log_index"),
+                    event_hash: row.get("event_hash"),
+                    actor_id: row.get("actor_id"),
+                    action_type: row.get("action_type"),
+                    target: row.get("target"),
+                    payload: serde_json::from_str(&payload_str).unwrap_or_default(),
+                    payload_hash: row.get("payload_hash"),
+                    artifact_hash: row.get("artifact_hash"),
+                    reserved_energy: row.get("reserved_energy"),
+                    settled_energy: row.get("settled_energy"),
+                    timestamp: row.get("timestamp"),
+                }
+            })
+            .collect();
+        Ok(events)
+    }
+
     pub async fn count(&self) -> KernelResult<i64> {
         let row = sqlx::query("SELECT COUNT(*) AS count FROM events")
             .fetch_one(&self.pool)

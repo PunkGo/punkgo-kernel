@@ -68,6 +68,14 @@ struct ReadQuery {
     tree_size: Option<i64>,
     /// For audit_consistency_proof: the older tree size.
     old_size: Option<i64>,
+    /// Pagination: only return events with log_index < this value.
+    /// Used for backward pagination (fetching older events).
+    #[serde(default)]
+    before_index: Option<i64>,
+    /// Pagination: only return events with log_index > this value.
+    /// Used for forward pagination (fetching newer events).
+    #[serde(default)]
+    after_index: Option<i64>,
     /// Identity of the requester. Used by visibility boundary checks.
     /// Currently optional — when absent, all reads are permitted (single-user).
     /// When multi-user collaboration is introduced, this becomes required.
@@ -750,13 +758,25 @@ impl Kernel {
                 }))
             }
             "events" => {
-                let limit = query.limit.unwrap_or(20).clamp(1, 100);
-                let events = if let Some(ref actor_id) = query.actor_id {
-                    self.event_log.list_by_actor(actor_id, limit).await?
-                } else {
-                    self.event_log.list_recent(limit).await?
-                };
-                Ok(json!({ "events": events }))
+                let limit = query.limit.unwrap_or(20).clamp(1, 500);
+                let events = self
+                    .event_log
+                    .query(
+                        query.actor_id.as_deref(),
+                        query.before_index,
+                        query.after_index,
+                        limit,
+                    )
+                    .await?;
+                // Pagination metadata: smallest log_index in result set.
+                // Client passes this as `before_index` to fetch the next page.
+                let next_cursor = events.last().map(|e| e.log_index);
+                let has_more = events.len() as i64 == limit;
+                Ok(json!({
+                    "events": events,
+                    "has_more": has_more,
+                    "next_cursor": next_cursor
+                }))
             }
             "stats" => {
                 let event_count = self.event_log.count().await?;
