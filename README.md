@@ -3,6 +3,8 @@
 [Website](https://punkgo.ai) | [Whitepaper](docs/PunkGo_Whitepaper_EN.md) | [PIP-001](docs/PIP-001_EN.md) | [PIP-002](docs/PIP-002_EN.md)
 
 [![CI](https://github.com/PunkGo/punkgo-kernel/actions/workflows/ci.yml/badge.svg)](https://github.com/PunkGo/punkgo-kernel/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/punkgo-kernel.svg)](https://crates.io/crates/punkgo-kernel)
+[![crates.io](https://img.shields.io/crates/v/punkgo-core.svg?label=punkgo-core)](https://crates.io/crates/punkgo-core)
 
 > When AI does everything for you, who proves you still exist?
 
@@ -35,13 +37,15 @@ where **A** is an atomic action initiated by an actor: `observe`, `create`, `mut
 punkgo-kernel/
   bins/
     punkgo-cli/        # CLI client (IPC over Unix socket / Windows named pipe)
-    punkgo-kerneld/    # Kernel daemon (tokio + SQLite)
   crates/
     punkgo-core/       # Core types: Actor, Energy, Action, Boundary, Consent
-    punkgo-runtime/    # Kernel: 7-step submit pipeline, lifecycle, energy producer
-    punkgo-state/      # Persistence: ActorStore, EnergyLedger, EventLog, EnvelopeStore, BlobStore
-    punkgo-audit/      # Audit: Merkle tree, inclusion/consistency proofs, C2SP checkpoints
-    punkgo-testkit/    # Test utilities: temp state dirs, request builders
+    punkgo-kernel/     # Kernel engine + daemon binary (cargo install punkgo-kernel)
+      src/
+        audit.rs       # Merkle tree, inclusion/consistency proofs, C2SP checkpoints
+        state/         # Persistence: ActorStore, EnergyLedger, EventLog, EnvelopeStore, BlobStore
+        runtime/       # 7-step submit pipeline, lifecycle, energy producer
+        daemon/        # punkgo-kerneld binary (IPC server + energy producer)
+        testkit.rs     # Test utilities: temp state dirs, request builders
 ```
 
 ### Submit Pipeline
@@ -104,11 +108,17 @@ These proofs enable whitepaper invariants §3.5 (append-only provable) and §3.7
 
 ## Quick Start
 
-### Prerequisites
+### Install from crates.io
 
-- Rust 2024 edition (1.85+)
+```bash
+cargo install punkgo-kernel
+```
 
-### Build & Test
+This installs the `punkgo-kerneld` daemon binary.
+
+### Build from Source
+
+Requires Rust 2024 edition (1.85+).
 
 ```bash
 cargo build --workspace
@@ -118,6 +128,8 @@ cargo test --workspace
 ### Start the Kernel Daemon
 
 ```bash
+punkgo-kerneld
+# or from source:
 cargo run --bin punkgo-kerneld
 ```
 
