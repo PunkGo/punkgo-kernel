@@ -97,13 +97,17 @@ Energy cost: `25 + output_bytes / 256`. The kernel does not verify whether OID r
 
 ### Audit Trail
 
-Every committed event is added to a Merkle tree (Google tlog algorithm):
+<p align="center">
+  <img src="assets/merkle-proof.svg" alt="PunkGo Merkle inclusion proof — 3 hashes prove 1 event in a tree of 8" width="680">
+</p>
+
+Every committed event is added to a Merkle tree (Google tlog algorithm). The proof is logarithmic: 3 hashes verify 1 event in 8; 20 hashes verify 1 event in a million.
 
 - **Inclusion proof** — prove a specific event exists in the tree (RFC 6962)
 - **Consistency proof** — prove the tree is append-only between two sizes (RFC 6962)
-- **C2SP checkpoints** — signed tree heads for independent verification
+- **C2SP checkpoints** — signed tree heads compatible with Go's `sum.golang.org` and Sigstore Rekor
 
-These proofs enable whitepaper invariants §3.5 (append-only provable) and §3.7 (independently verifiable).
+These proofs enable whitepaper invariants §3.5 (append-only provable) and §3.7 (independently verifiable). Any RFC 6962 verifier can audit PunkGo's log — no PunkGo software required.
 
 ## Quick Start
 
