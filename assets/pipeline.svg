@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="200" font-family="'JetBrains Mono','Fira Code','Cascadia Code',Menlo,monospace" font-size="12.5">
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="#484f58"/>
+    </marker>
+  </defs>
+
+  <rect width="680" height="200" rx="8" fill="#0d1117"/>
+
+  <!-- Terminal dots + brand -->
+  <circle cx="20" cy="14" r="5" fill="#ff5f57"/>
+  <circle cx="36" cy="14" r="5" fill="#febc2e"/>
+  <circle cx="52" cy="14" r="5" fill="#28c840"/>
+  <text x="340" y="18" fill="#3fb950" font-size="11" font-weight="bold" text-anchor="middle">⚡ punkgo-kernel</text>
+
+  <text x="340" y="46" fill="#8b949e" font-size="11" font-weight="bold" text-anchor="middle">7-STEP SUBMIT PIPELINE</text>
+
+  <!-- Step boxes — flowing left to right -->
+  <!-- 1. validate -->
+  <rect x="18" y="62" width="76" height="36" rx="4" fill="#161b22" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="56" y="76" fill="#58a6ff" font-size="9" text-anchor="middle" font-weight="bold">validate</text>
+  <text x="56" y="90" fill="#6e7681" font-size="7" text-anchor="middle">actor · boundary</text>
+
+  <!-- arrow -->
+  <line x1="94" y1="80" x2="108" y2="80" stroke="#484f58" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- 2. quote -->
+  <rect x="108" y="62" width="70" height="36" rx="4" fill="#161b22" stroke="#d29922" stroke-width="1.5"/>
+  <text x="143" y="76" fill="#d29922" font-size="9" text-anchor="middle" font-weight="bold">quote</text>
+  <text x="143" y="90" fill="#6e7681" font-size="7" text-anchor="middle">energy cost</text>
+
+  <!-- arrow -->
+  <line x1="178" y1="80" x2="192" y2="80" stroke="#484f58" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- 3. reserve -->
+  <rect x="192" y="62" width="70" height="36" rx="4" fill="#161b22" stroke="#d29922" stroke-width="1.5"/>
+  <text x="227" y="76" fill="#d29922" font-size="9" text-anchor="middle" font-weight="bold">reserve</text>
+  <text x="227" y="90" fill="#6e7681" font-size="7" text-anchor="middle">lock energy</text>
+
+  <!-- arrow -->
+  <line x1="262" y1="80" x2="276" y2="80" stroke="#484f58" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- 4. validate_payload -->
+  <rect x="276" y="62" width="76" height="36" rx="4" fill="#161b22" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="314" y="76" fill="#58a6ff" font-size="8" text-anchor="middle" font-weight="bold">validate</text>
+  <text x="314" y="90" fill="#6e7681" font-size="7" text-anchor="middle">payload</text>
+
+  <!-- arrow -->
+  <line x1="352" y1="80" x2="366" y2="80" stroke="#484f58" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- 5. settle -->
+  <rect x="366" y="62" width="70" height="36" rx="4" fill="#161b22" stroke="#d29922" stroke-width="1.5"/>
+  <text x="401" y="76" fill="#d29922" font-size="9" text-anchor="middle" font-weight="bold">settle</text>
+  <text x="401" y="90" fill="#6e7681" font-size="7" text-anchor="middle">finalize</text>
+
+  <!-- arrow -->
+  <line x1="436" y1="80" x2="450" y2="80" stroke="#484f58" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- 6. append -->
+  <rect x="450" y="62" width="70" height="36" rx="4" fill="#161b22" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="485" y="76" fill="#3fb950" font-size="9" text-anchor="middle" font-weight="bold">append</text>
+  <text x="485" y="90" fill="#6e7681" font-size="7" text-anchor="middle">log + hash</text>
+
+  <!-- arrow -->
+  <line x1="520" y1="80" x2="534" y2="80" stroke="#484f58" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- 7. receipt -->
+  <rect x="534" y="58" width="126" height="44" rx="4" fill="#0a2d1f" stroke="#3fb950" stroke-width="2"/>
+  <text x="597" y="76" fill="#3fb950" font-size="10" text-anchor="middle" font-weight="bold">receipt</text>
+  <text x="597" y="92" fill="#6e7681" font-size="7" text-anchor="middle">id · index · hash</text>
+
+  <!-- Color legend at bottom -->
+  <!-- Blue = validation -->
+  <rect x="120" y="120" width="10" height="10" rx="2" fill="#0d1117" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="136" y="130" fill="#8b949e" font-size="9">validation</text>
+
+  <!-- Amber = energy -->
+  <rect x="230" y="120" width="10" height="10" rx="2" fill="#0d1117" stroke="#d29922" stroke-width="1.5"/>
+  <text x="246" y="130" fill="#8b949e" font-size="9">energy accounting</text>
+
+  <!-- Green = commit -->
+  <rect x="390" y="120" width="10" height="10" rx="2" fill="#0d1117" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="406" y="130" fill="#8b949e" font-size="9">commit + proof</text>
+
+  <!-- Bottom note -->
+  <text x="340" y="168" fill="#484f58" font-size="10" text-anchor="middle">every action is atomic — if any step fails, energy is refunded and no event is recorded</text>
+  <text x="340" y="184" fill="#484f58" font-size="10" text-anchor="middle">the kernel is a committer, not an executor — PIP-002</text>
+</svg>

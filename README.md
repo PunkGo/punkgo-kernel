@@ -15,20 +15,9 @@ PunkGo implements the **Right to History** — the principle that every actor (h
 
 The kernel is a single-writer, append-only event system built on three primitives:
 
-| Primitive | Description |
-|-----------|-------------|
-| **P** (Actor) | An actor — human or delegated agent |
-| **E** (Energy) | Energy — the universal cost metric for actions |
-| **S** (State) | State — all persistent reality and history, including the verifiable structure of how history was written |
-
-State transitions follow:
-
-```
-S' = f(S, A, E)
-E' = E - cost(A)
-```
-
-where **A** is an atomic action initiated by an actor: `observe`, `create`, `mutate`, or `execute`.
+<p align="center">
+  <img src="assets/world-model.svg" alt="PunkGo world model — Actor spends Energy to commit State" width="680">
+</p>
 
 ## Architecture
 
@@ -51,9 +40,9 @@ punkgo-kernel/
 
 Every action goes through a **7-step pipeline**:
 
-```
-validate → quote → reserve → validate_payload → settle → append → receipt
-```
+<p align="center">
+  <img src="assets/pipeline.svg" alt="PunkGo 7-step submit pipeline" width="680">
+</p>
 
 1. **Validate** — check actor status, boundary permissions, action well-formedness
 2. **Quote** — compute energy cost for the action
@@ -108,6 +97,8 @@ Every committed event is added to a Merkle tree (Google tlog algorithm). The pro
 - **C2SP checkpoints** — signed tree heads compatible with Go's `sum.golang.org` and Sigstore Rekor
 
 These proofs enable whitepaper invariants §3.5 (append-only provable) and §3.7 (independently verifiable). Any RFC 6962 verifier can audit PunkGo's log — no PunkGo software required.
+
+**Trust model**: The current Merkle proofs guarantee **append-only integrity** — no silent deletion or modification. However, **a root operator with database access could theoretically rebuild the tree from scratch**. This is the "trust the operator" boundary: sufficient for local sovereignty (you trust your own hardware), but not for trustless third-party audit. **Future work will introduce cryptographic mechanisms to make history unforgeable even by root.**
 
 ## Quick Start
 
