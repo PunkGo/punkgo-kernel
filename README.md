@@ -4,7 +4,6 @@
 
 [![CI](https://github.com/PunkGo/punkgo-kernel/actions/workflows/ci.yml/badge.svg)](https://github.com/PunkGo/punkgo-kernel/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/punkgo-kernel.svg)](https://crates.io/crates/punkgo-kernel)
-[![crates.io](https://img.shields.io/crates/v/punkgo-core.svg?label=punkgo-core)](https://crates.io/crates/punkgo-core)
 
 > When AI does everything for you, who proves you still exist?
 
