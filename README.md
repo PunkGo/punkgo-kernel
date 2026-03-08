@@ -154,6 +154,11 @@ cargo run --bin punkgo-cli -- audit proof 0
 
 **[specs/kernel-tools.json](specs/kernel-tools.json)** — MCP-compatible tool definitions for all kernel operations. Machine-readable, no running kernel required. Covers Quote, Submit (all action types), and Read (all query kinds) with full input/output JSON schemas.
 
+## Applications
+
+- **[punkgo-jack](https://github.com/PunkGo/punkgo-jack)** — Claude Code hook adapter: every AI tool call gets a cryptographic receipt
+- **[punkgo-watchdog](https://github.com/PunkGo/punkgo-watchdog)** — real-time kernel monitor with terminal dashboard
+
 ## Governance
 
 PunkGo is governed by two documents:
