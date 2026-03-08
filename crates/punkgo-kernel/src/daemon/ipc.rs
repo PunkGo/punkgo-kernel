@@ -5,7 +5,7 @@ use interprocess::local_socket::{
     traits::tokio::Listener as _,
 };
 use punkgo_core::protocol::{RequestEnvelope, ResponseEnvelope};
-use punkgo_runtime::Kernel;
+use punkgo_kernel::Kernel;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tracing::{error, info, warn};
 

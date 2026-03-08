@@ -24,6 +24,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
+name = "async-trait"
+version = "0.1.89"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9035ad2d096bed7955a320ee7e2230574d28fd3c3a0f186cbea1ff3c7eed5dbb"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "atoi"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -926,20 +937,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "punkgo-audit"
-version = "0.2.4"
-dependencies = [
- "serde",
- "serde_json",
- "sqlx",
- "thiserror 2.0.18",
- "tlog_tiles",
- "tracing",
-]
-
-[[package]]
 name = "punkgo-cli"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "anyhow",
  "interprocess",
@@ -949,7 +948,7 @@ dependencies = [
 
 [[package]]
 name = "punkgo-core"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "globset",
  "serde",
@@ -961,56 +960,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "punkgo-kerneld"
-version = "0.2.4"
+name = "punkgo-kernel"
+version = "0.2.5"
 dependencies = [
  "anyhow",
+ "async-trait",
  "interprocess",
- "punkgo-core",
- "punkgo-runtime",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "punkgo-runtime"
-version = "0.2.4"
-dependencies = [
- "punkgo-audit",
- "punkgo-core",
- "punkgo-state",
- "punkgo-testkit",
- "serde",
- "serde_json",
- "sqlx",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "punkgo-state"
-version = "0.2.4"
-dependencies = [
  "punkgo-core",
  "serde",
  "serde_json",
  "sha2",
  "sqlx",
  "tempfile",
+ "thiserror 2.0.18",
+ "tlog_tiles",
  "tokio",
  "tracing",
- "uuid",
-]
-
-[[package]]
-name = "punkgo-testkit"
-version = "0.2.4"
-dependencies = [
- "punkgo-core",
- "serde_json",
+ "tracing-subscriber",
  "uuid",
 ]
 

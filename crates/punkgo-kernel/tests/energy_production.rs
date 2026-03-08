@@ -1,8 +1,8 @@
 use punkgo_core::action::{Action, ActionType};
 use punkgo_core::protocol::RequestType;
 use punkgo_core::stellar::StellarConfig;
-use punkgo_runtime::{EnergyProducer, Kernel, KernelConfig};
-use punkgo_testkit::{TestStateDir, make_request};
+use punkgo_kernel::{EnergyProducer, Kernel, KernelConfig};
+use punkgo_kernel::testkit::{TestStateDir, make_request};
 use serde_json::json;
 
 /// Helper: bootstrap kernel and return everything needed for energy tests.

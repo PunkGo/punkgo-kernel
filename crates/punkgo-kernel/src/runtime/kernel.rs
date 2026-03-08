@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use punkgo_audit::AuditLog;
+use crate::audit::AuditLog;
 use punkgo_core::action::{Action, ActionType, payload_hash_hex, quote_cost};
 use punkgo_core::actor::{
     ActorType, CreateActorSpec, WritableTarget, build_lineage, derive_agent_id,
@@ -15,10 +15,10 @@ use punkgo_core::consent::{self, AuthorizationMode, CheckpointLevel, EnvelopeSpe
 use punkgo_core::errors::{KernelError, KernelResult};
 use punkgo_core::policy::{check_read_access, validate_action};
 
-use crate::lifecycle;
+use super::lifecycle;
 use punkgo_core::protocol::{RequestEnvelope, RequestType, ResponseEnvelope};
 use punkgo_core::stellar::{StellarConfig, load_stellar_config};
-use punkgo_state::{
+use crate::state::{
     ActorStore, EnergyLedger, EnergyReservation, EnvelopeStore, EventLog, EventRecord,
     NewHoldRequest, StateStore,
 };

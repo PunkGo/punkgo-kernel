@@ -1,12 +1,8 @@
 [workspace]
 members = [
     "bins/punkgo-cli",
-    "bins/punkgo-kerneld",
-    "crates/punkgo-audit",
     "crates/punkgo-core",
-    "crates/punkgo-testkit",
-    "crates/punkgo-state",
-    "crates/punkgo-runtime",
+    "crates/punkgo-kernel",
 ]
 resolver = "2"
 

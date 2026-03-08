@@ -1,4 +1,4 @@
-use punkgo_state::{EnergyLedger, EventLog, EventRecord, StateStore};
+use punkgo_kernel::state::{EnergyLedger, EventLog, EventRecord, StateStore};
 use sqlx::Row;
 use uuid::Uuid;
 

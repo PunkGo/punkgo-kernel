@@ -13,9 +13,10 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use punkgo_runtime::{EnergyProducer, Kernel, KernelConfig};
+use punkgo_kernel::{EnergyProducer, Kernel, KernelConfig};
 use tracing::{error, info, warn};
 
+#[path = "ipc.rs"]
 mod ipc;
 
 #[tokio::main]
