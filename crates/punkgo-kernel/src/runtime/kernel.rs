@@ -810,7 +810,9 @@ impl Kernel {
                 // Legacy: snapshot is superseded by audit checkpoint.
                 // Return audit checkpoint data for backward compatibility.
                 let event_count = self.event_log.count().await?;
-                self.audit_log.ensure_checkpoint(event_count as u64).await
+                self.audit_log
+                    .ensure_checkpoint(event_count as u64)
+                    .await
                     .map_err(|e| KernelError::Audit(e.to_string()))?;
                 let cp = self
                     .audit_log
@@ -834,7 +836,9 @@ impl Kernel {
             }
             "audit_checkpoint" => {
                 let event_count = self.event_log.count().await?;
-                self.audit_log.ensure_checkpoint(event_count as u64).await
+                self.audit_log
+                    .ensure_checkpoint(event_count as u64)
+                    .await
                     .map_err(|e| KernelError::Audit(e.to_string()))?;
                 let cp = self
                     .audit_log
@@ -854,7 +858,9 @@ impl Kernel {
                     None => {
                         // Ensure checkpoint is current before deriving tree_size.
                         let event_count = self.event_log.count().await? as u64;
-                        self.audit_log.ensure_checkpoint(event_count).await
+                        self.audit_log
+                            .ensure_checkpoint(event_count)
+                            .await
                             .map_err(|e| KernelError::Audit(e.to_string()))?;
                         self.audit_log
                             .tree_size()
