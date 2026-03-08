@@ -397,16 +397,11 @@ impl Kernel {
 
                         // Audit trail — atomic with event (whitepaper §3 invariant 5).
                         let log_index = hold_event.log_index as u64;
-                        let tree_size = log_index + 1;
                         self.audit_log
                             .append_leaf_in_tx(&mut tx, log_index, &hold_event.event_hash)
                             .await
                             .map_err(|e| KernelError::Audit(e.to_string()))?;
-                        self.audit_log
-                            .make_checkpoint_in_tx(&mut tx, tree_size)
-                            .await
-                            .map_err(|e| KernelError::Audit(e.to_string()))?;
-
+                        // Checkpoint generated lazily on read, not here.
                         tx.commit().await?;
 
                         return Err(KernelError::HoldTriggered {
@@ -710,16 +705,15 @@ impl Kernel {
 
         // Audit trail update — atomic with event (whitepaper §3 invariant 5).
         let log_index = event.log_index as u64;
-        let tree_size = log_index + 1;
         self.audit_log
             .append_leaf_in_tx(&mut tx, log_index, &event.event_hash)
             .await
             .map_err(|e| KernelError::Audit(e.to_string()))?;
-        self.audit_log
-            .make_checkpoint_in_tx(&mut tx, tree_size)
-            .await
-            .map_err(|e| KernelError::Audit(e.to_string()))?;
 
+        // Checkpoint is NOT generated on every event. It is a derived artifact
+        // (tree root computed from leaf hashes) and can be generated on-demand
+        // when queried (receipt, show, verify) or via explicit checkpoint command.
+        // This keeps the write path fast and lock-free for concurrent access.
         tx.commit().await?;
         info!(event_id = %event.id, log_index = event.log_index, "event committed");
         Ok(())
@@ -816,6 +810,8 @@ impl Kernel {
                 // Legacy: snapshot is superseded by audit checkpoint.
                 // Return audit checkpoint data for backward compatibility.
                 let event_count = self.event_log.count().await?;
+                self.audit_log.ensure_checkpoint(event_count as u64).await
+                    .map_err(|e| KernelError::Audit(e.to_string()))?;
                 let cp = self
                     .audit_log
                     .latest_checkpoint()
@@ -837,6 +833,9 @@ impl Kernel {
                 }))
             }
             "audit_checkpoint" => {
+                let event_count = self.event_log.count().await?;
+                self.audit_log.ensure_checkpoint(event_count as u64).await
+                    .map_err(|e| KernelError::Audit(e.to_string()))?;
                 let cp = self
                     .audit_log
                     .latest_checkpoint()
@@ -852,11 +851,16 @@ impl Kernel {
                 })? as u64;
                 let tree_size = match query.tree_size {
                     Some(s) => s as u64,
-                    None => self
-                        .audit_log
-                        .tree_size()
-                        .await
-                        .map_err(|e| KernelError::Audit(e.to_string()))?,
+                    None => {
+                        // Ensure checkpoint is current before deriving tree_size.
+                        let event_count = self.event_log.count().await? as u64;
+                        self.audit_log.ensure_checkpoint(event_count).await
+                            .map_err(|e| KernelError::Audit(e.to_string()))?;
+                        self.audit_log
+                            .tree_size()
+                            .await
+                            .map_err(|e| KernelError::Audit(e.to_string()))?
+                    }
                 };
                 let proof = self
                     .audit_log
@@ -1402,16 +1406,11 @@ impl Kernel {
 
         // Audit trail — atomic with event (whitepaper §3 invariant 5).
         let log_index = response_event.log_index as u64;
-        let tree_size = log_index + 1;
         self.audit_log
             .append_leaf_in_tx(&mut tx, log_index, &response_event.event_hash)
             .await
             .map_err(|e| KernelError::Audit(e.to_string()))?;
-        self.audit_log
-            .make_checkpoint_in_tx(&mut tx, tree_size)
-            .await
-            .map_err(|e| KernelError::Audit(e.to_string()))?;
-
+        // Checkpoint generated lazily on read, not here.
         tx.commit().await?;
 
         info!(
@@ -1604,16 +1603,11 @@ impl Kernel {
 
             // Audit trail — atomic with event (whitepaper §3 invariant 5).
             let t_log_index = timeout_event.log_index as u64;
-            let t_tree_size = t_log_index + 1;
             self.audit_log
                 .append_leaf_in_tx(&mut tx, t_log_index, &timeout_event.event_hash)
                 .await
                 .map_err(|e| KernelError::Audit(e.to_string()))?;
-            self.audit_log
-                .make_checkpoint_in_tx(&mut tx, t_tree_size)
-                .await
-                .map_err(|e| KernelError::Audit(e.to_string()))?;
-
+            // Checkpoint generated lazily on read, not here.
             tx.commit().await?;
 
             info!(

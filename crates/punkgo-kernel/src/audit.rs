@@ -220,6 +220,8 @@ impl AuditLog {
     /// Returns the current tree size (number of leaves stored).
     pub async fn tree_size(&self) -> Result<u64, AuditError> {
         // Use the latest checkpoint's tree_size as authoritative.
+        // When checkpoints are generated lazily, this may lag behind the actual
+        // event count. Call `ensure_checkpoint()` first if you need an up-to-date value.
         let row =
             sqlx::query("SELECT tree_size FROM audit_checkpoints ORDER BY tree_size DESC LIMIT 1")
                 .fetch_optional(&self.pool)
@@ -227,6 +229,21 @@ impl AuditLog {
         Ok(row
             .map(|r| r.get::<i64, _>("tree_size") as u64)
             .unwrap_or(0))
+    }
+
+    /// Ensure the checkpoint is up-to-date with the given event count.
+    /// If the latest checkpoint is stale, generates a new one.
+    /// Called lazily on read operations that need a current checkpoint.
+    pub async fn ensure_checkpoint(&self, event_count: u64) -> Result<(), AuditError> {
+        if event_count == 0 {
+            return Ok(());
+        }
+        let current = self.tree_size().await?;
+        if current >= event_count {
+            return Ok(()); // already up to date
+        }
+        self.make_checkpoint(event_count).await?;
+        Ok(())
     }
 
     async fn read_hash_in_tx(
