@@ -14,7 +14,7 @@ default = []
 testkit = []
 
 [dependencies]
-punkgo-core = { path = "../punkgo-core" }
+punkgo-core = { path = "../punkgo-core", version = "0.2.6" }
 anyhow.workspace = true
 async-trait.workspace = true
 serde.workspace = true
