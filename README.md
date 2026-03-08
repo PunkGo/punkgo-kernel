@@ -156,7 +156,7 @@ cargo run --bin punkgo-cli -- audit proof 0
 
 ## Applications
 
-- **[punkgo-jack](https://github.com/PunkGo/punkgo-jack)** — Claude Code hook adapter: every AI tool call gets a cryptographic receipt
+- **[punkgo-jack](https://github.com/PunkGo/punkgo-jack)** — AI tool hook adapter: every tool call gets a cryptographic receipt
 - **[punkgo-watchdog](https://github.com/PunkGo/punkgo-watchdog)** — real-time kernel monitor with terminal dashboard
 
 ## Governance
