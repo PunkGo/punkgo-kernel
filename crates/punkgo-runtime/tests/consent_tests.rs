@@ -308,13 +308,13 @@ async fn envelope_budget_exhaustion_halts() {
     )
     .await;
 
-    // Grant a very small budget — just enough for one mutate (cost=15)
+    // Grant a very small budget — just enough for one mutate (action=15 + append=1 = 16)
     grant_envelope(
         &kernel,
         "budget-agent",
         json!(["workspace/**"]),
         json!(["mutate"]),
-        15, // exactly one mutate
+        16, // exactly one mutate
     )
     .await;
 

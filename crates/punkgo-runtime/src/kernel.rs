@@ -479,7 +479,9 @@ impl Kernel {
                 None
             };
             (hold_reserved, phantom)
-        } else if action.action_type.is_state_changing() {
+        } else {
+            // All actions pay quote_cost (action_cost + append_cost).
+            // For observe: action_cost=0 but append_cost >= 1 (Landauer).
             let cost = quote_cost(&action) as i64;
             let res = if cost > 0 {
                 Some(self.energy_ledger.reserve(&action.actor_id, cost).await?)
@@ -487,8 +489,6 @@ impl Kernel {
                 None
             };
             (cost, res)
-        } else {
-            (0, None)
         };
 
         // Step 4: VALIDATE EXECUTE PAYLOAD (PIP-002 §2 — for Execute actions only)

@@ -65,7 +65,7 @@ async fn submit_mutate_charges_energy_and_appends_event() {
         ))
         .await;
     assert_eq!(energy.status, "ok");
-    assert_eq!(energy.payload["energy_balance"], json!(999985));
+    assert_eq!(energy.payload["energy_balance"], json!(999984));
     assert_eq!(energy.payload["reserved_energy"], json!(0));
 
     let events = kernel
@@ -291,7 +291,7 @@ async fn execute_cost_uses_output_bytes() {
         ))
         .await;
     assert_eq!(resp.status, "ok", "{}", resp.payload);
-    assert_eq!(resp.payload["settled_cost"], json!(27));
+    assert_eq!(resp.payload["settled_cost"], json!(28));
 
     let energy = kernel
         .handle_request(make_request(
@@ -299,8 +299,8 @@ async fn execute_cost_uses_output_bytes() {
             json!({ "kind": "actor_energy", "actor_id": "root" }),
         ))
         .await;
-    // Initial: 1_000_000 - 27 = 999973
-    assert_eq!(energy.payload["energy_balance"], json!(999973));
+    // Initial: 1_000_000 - 28 = 999972 (action=27 + append=1)
+    assert_eq!(energy.payload["energy_balance"], json!(999972));
 }
 
 #[tokio::test]
@@ -332,7 +332,7 @@ async fn execute_without_output_bytes_costs_base_25() {
         ))
         .await;
     assert_eq!(resp.status, "ok", "{}", resp.payload);
-    assert_eq!(resp.payload["settled_cost"], json!(25));
+    assert_eq!(resp.payload["settled_cost"], json!(26));
 }
 
 #[tokio::test]
