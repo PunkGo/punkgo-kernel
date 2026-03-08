@@ -32,11 +32,41 @@ pub struct KernelConfig {
 
 impl Default for KernelConfig {
     fn default() -> Self {
+        let state_dir = std::env::var("PUNKGO_STATE_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| default_state_dir());
         Self {
-            state_dir: PathBuf::from("state"),
+            state_dir,
             ipc_endpoint: "punkgo-kernel".to_string(),
         }
     }
+}
+
+/// Default state directory: ~/.punkgo/state
+///
+/// Falls back to `./state` if home directory cannot be determined.
+fn default_state_dir() -> PathBuf {
+    if let Some(home) = home_dir() {
+        return home.join(".punkgo").join("state");
+    }
+    PathBuf::from("state")
+}
+
+fn home_dir() -> Option<PathBuf> {
+    // Unix / WSL
+    if let Some(home) = std::env::var_os("HOME") {
+        return Some(PathBuf::from(home));
+    }
+    // Windows primary
+    if let Some(profile) = std::env::var_os("USERPROFILE") {
+        return Some(PathBuf::from(profile));
+    }
+    // Windows fallback
+    let drive = std::env::var_os("HOMEDRIVE")?;
+    let path = std::env::var_os("HOMEPATH")?;
+    let mut p = PathBuf::from(drive);
+    p.push(path);
+    Some(p)
 }
 
 /// Cryptographic receipt returned after a successful action submission.

@@ -1,4 +1,4 @@
-use std::fs::{self, File, OpenOptions};
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use punkgo_core::errors::{KernelError, KernelResult};
@@ -18,8 +18,6 @@ pub struct StatePaths {
 pub struct StateStore {
     pool: SqlitePool,
     paths: StatePaths,
-    _lock_file: File,
-    lock_path: PathBuf,
 }
 
 impl StateStore {
@@ -35,21 +33,9 @@ impl StateStore {
         fs::create_dir_all(&event_log_root)?;
         fs::create_dir_all(&blobs_root)?;
 
-        let lock_path = root.join("kernel.lock");
-        let lock_file_result = OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&lock_path);
-        let lock_file = match lock_file_result {
-            Ok(file) => file,
-            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
-                return Err(KernelError::PolicyViolation(format!(
-                    "state lock exists at {}. If no kernel process is running, remove this file and retry.",
-                    lock_path.display()
-                )));
-            }
-            Err(err) => return Err(err.into()),
-        };
+        // No file-based lock — SQLite WAL handles concurrent access, and the
+        // IPC endpoint binding prevents duplicate daemon processes. The old
+        // kernel.lock approach left stale lock files after crashes.
 
         let db_path = root.join("punkgo.db");
         let connect_options = SqliteConnectOptions::new()
@@ -81,8 +67,6 @@ impl StateStore {
                 blobs_root,
                 db_path,
             },
-            _lock_file: lock_file,
-            lock_path,
         };
 
         info!(state_root = %store.paths.root.display(), "state store bootstrapped");
@@ -423,12 +407,6 @@ impl StateStore {
         .execute(&self.pool)
         .await?;
         Ok(())
-    }
-}
-
-impl Drop for StateStore {
-    fn drop(&mut self) {
-        let _ = fs::remove_file(&self.lock_path);
     }
 }
 
