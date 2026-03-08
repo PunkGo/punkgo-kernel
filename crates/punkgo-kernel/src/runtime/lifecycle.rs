@@ -11,9 +11,9 @@
 //!   action_type = Mutate
 //!   payload.op = "freeze" | "unfreeze" | "terminate"
 
+use crate::state::ActorStore;
 use punkgo_core::actor::{ActorRecord, ActorStatus, ActorType, LifecycleOp};
 use punkgo_core::errors::{KernelError, KernelResult};
-use crate::state::ActorStore;
 
 /// Parse a lifecycle operation from an action target + payload.
 ///

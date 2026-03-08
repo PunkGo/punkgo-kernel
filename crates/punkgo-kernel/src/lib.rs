@@ -11,15 +11,15 @@
 //! point for actions and ensures the 7 invariants defined in the whitepaper §3.
 
 pub mod audit;
-pub mod state;
 pub mod runtime;
+pub mod state;
 
 pub mod testkit;
 
 // Re-export the most commonly used types at crate root.
+pub use audit::{AuditCheckpoint, AuditError, AuditLog};
 pub use runtime::{EnergyProducer, Kernel, KernelConfig, SubmitReceipt};
 pub use state::{
     ActorStore, BlobStore, EnergyLedger, EnergyReservation, EnvelopeStore, EventLog, EventRecord,
     NewHoldRequest, StatePaths, StateStore,
 };
-pub use audit::{AuditCheckpoint, AuditError, AuditLog};

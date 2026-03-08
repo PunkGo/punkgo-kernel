@@ -14,8 +14,8 @@
 use sqlx::SqlitePool;
 use tracing::{debug, info, warn};
 
-use punkgo_core::stellar::StellarConfig;
 use crate::state::{ActorStore, EnergyLedger};
+use punkgo_core::stellar::StellarConfig;
 
 /// Background energy producer that runs in a tokio task.
 pub struct EnergyProducer {

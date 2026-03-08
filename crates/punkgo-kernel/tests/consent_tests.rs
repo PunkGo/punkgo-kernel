@@ -1,7 +1,7 @@
 use punkgo_core::action::{Action, ActionType};
 use punkgo_core::protocol::RequestType;
-use punkgo_kernel::{Kernel, KernelConfig};
 use punkgo_kernel::testkit::{TestStateDir, make_request};
+use punkgo_kernel::{Kernel, KernelConfig};
 use serde_json::json;
 
 async fn setup_kernel() -> (Kernel, TestStateDir) {
