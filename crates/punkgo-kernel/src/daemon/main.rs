@@ -10,6 +10,7 @@
 //! 3. Listens for IPC connections and dispatches requests to [`Kernel::handle_request`]
 //! 4. On CTRL-C: signals the energy producer to stop, aborts the IPC server, and exits
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -27,6 +28,11 @@ async fn main() -> Result<()> {
         .init();
 
     let config = KernelConfig::default();
+
+    // Acquire PID lockfile — prevents multiple daemons and detects stale pipes.
+    let lockfile = config.state_dir.join("daemon.pid");
+    check_and_acquire_lock(&lockfile)?;
+
     let kernel = Arc::new(Kernel::bootstrap(&config).await?);
     info!(state_dir = %config.state_dir.display(), "kernel bootstrapped");
 
@@ -45,6 +51,7 @@ async fn main() -> Result<()> {
     });
 
     let endpoint = config.ipc_endpoint.clone();
+    info!(endpoint = %endpoint, "IPC endpoint resolved");
     let kernel_for_server = Arc::clone(&kernel);
     let mut server =
         tokio::spawn(async move { ipc::run_ipc_server(kernel_for_server, &endpoint).await });
@@ -81,6 +88,79 @@ async fn main() -> Result<()> {
         }
     }
 
+    // Clean up lockfile on graceful shutdown.
+    let _ = std::fs::remove_file(&lockfile);
     drop(kernel);
     Ok(())
+}
+
+/// Check for existing daemon via PID lockfile. If a stale lock exists (process
+/// dead), prompt the user to confirm cleanup.
+fn check_and_acquire_lock(lockfile: &std::path::Path) -> Result<()> {
+    if lockfile.exists() {
+        let content = std::fs::read_to_string(lockfile).unwrap_or_default();
+        let old_pid: u32 = content.trim().parse().unwrap_or(0);
+
+        if old_pid > 0 && is_process_alive(old_pid) {
+            eprintln!("Another punkgo-kerneld is running (PID {old_pid}).");
+            eprintln!();
+            eprint!("Kill it and continue? [y/N] ");
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            if input.trim().eq_ignore_ascii_case("y") || input.trim().eq_ignore_ascii_case("yes") {
+                kill_process(old_pid);
+                std::thread::sleep(std::time::Duration::from_secs(2));
+            } else {
+                eprintln!("Aborted.");
+                std::process::exit(1);
+            }
+        } else {
+            // Stale lockfile — old daemon crashed. Clean up silently.
+            info!(old_pid, "removing stale lockfile");
+        }
+    }
+
+    // Write our PID.
+    std::fs::write(lockfile, std::process::id().to_string())?;
+    Ok(())
+}
+
+fn is_process_alive(pid: u32) -> bool {
+    #[cfg(windows)]
+    {
+        let output = std::process::Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+            .output();
+        match output {
+            Ok(out) => {
+                let text = String::from_utf8_lossy(&out.stdout);
+                // CSV format: "process.exe","PID","...". Check for exact PID field.
+                text.contains(&format!("\"{pid}\""))
+            }
+            Err(_) => false,
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+}
+
+fn kill_process(pid: u32) {
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/PID", &pid.to_string()])
+            .output();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = std::process::Command::new("kill")
+            .args(["-9", &pid.to_string()])
+            .output();
+    }
 }

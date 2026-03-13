@@ -40,19 +40,44 @@ async fn stellar_config_loaded_on_bootstrap() {
     assert_eq!(energy_per_tick, 100, "default should compute to 100");
 }
 
-/// PIP-001 §2, §3: energy production credits actors proportionally.
+/// PIP-001 §2, §3: energy production credits agents (not humans).
+///
+/// Only agents participate in tick-based energy distribution. Humans (including root)
+/// receive a one-time initial balance and do not compete for ongoing production.
 #[tokio::test]
 async fn energy_production_credits_actors() {
     let (kernel, _state) = setup_kernel().await;
 
-    // Record root's initial energy
-    let root_before = kernel
+    // Create an agent — only agents receive tick energy
+    let create_agent = Action {
+        actor_id: "root".to_string(),
+        action_type: ActionType::Create,
+        target: "ledger/actor".to_string(),
+        payload: json!({
+            "actor_id": "agent-tick",
+            "actor_type": "agent",
+            "purpose": "test-tick",
+            "energy_balance": 1000,
+            "energy_share": 50.0
+        }),
+        timestamp: None,
+    };
+    let resp = kernel
         .handle_request(make_request(
-            RequestType::Read,
-            json!({ "kind": "actor_energy", "actor_id": "root" }),
+            RequestType::Submit,
+            serde_json::to_value(create_agent).unwrap(),
         ))
         .await;
-    let root_balance_before = root_before.payload["energy_balance"].as_i64().unwrap();
+    assert_eq!(resp.status, "ok");
+
+    // Record agent's initial energy
+    let agent_before = kernel
+        .handle_request(make_request(
+            RequestType::Read,
+            json!({ "kind": "actor_energy", "actor_id": "agent-tick" }),
+        ))
+        .await;
+    let agent_balance_before = agent_before.payload["energy_balance"].as_i64().unwrap();
 
     // Create energy producer with known config
     let config = StellarConfig {
@@ -66,78 +91,112 @@ async fn energy_production_credits_actors() {
         config,
     );
 
-    // Run one tick — root has energy_share=100.0, so gets all energy
+    // Run one tick — only the agent participates, gets all 100 energy
     let result = producer
         .produce_tick(100)
         .await
         .expect("tick should succeed");
     assert_eq!(result.total_energy_produced, 100);
     assert_eq!(result.actors_credited, 1);
-    assert_eq!(result.total_shares, 100.0);
+    assert_eq!(result.total_shares, 50.0);
 
-    // Verify root got credited
-    let root_after = kernel
+    // Verify agent got credited, root did not
+    let agent_after = kernel
         .handle_request(make_request(
             RequestType::Read,
-            json!({ "kind": "actor_energy", "actor_id": "root" }),
+            json!({ "kind": "actor_energy", "actor_id": "agent-tick" }),
         ))
         .await;
-    let root_balance_after = root_after.payload["energy_balance"].as_i64().unwrap();
+    let agent_balance_after = agent_after.payload["energy_balance"].as_i64().unwrap();
     assert_eq!(
-        root_balance_after,
-        root_balance_before + 100,
-        "root should receive all 100 energy units"
+        agent_balance_after,
+        agent_balance_before + 100,
+        "agent should receive all 100 energy units"
     );
-}
 
-/// PIP-001 §3: two actors with different shares receive proportional energy.
-#[tokio::test]
-async fn energy_distribution_proportional_to_shares() {
-    let (kernel, _state) = setup_kernel().await;
-
-    // Create a second actor with energy_share = 50.0
-    // root has energy_share = 100.0
-    let create_action = Action {
-        actor_id: "root".to_string(),
-        action_type: ActionType::Create,
-        target: "ledger/actor".to_string(),
-        payload: json!({
-            "actor_id": "agent-alpha",
-            "actor_type": "agent",
-            "purpose": "test-energy",
-            "energy_balance": 1000,
-            "energy_share": 50.0
-        }),
-        timestamp: None,
-    };
-    let resp = kernel
-        .handle_request(make_request(
-            RequestType::Submit,
-            serde_json::to_value(create_action).unwrap(),
-        ))
-        .await;
-    assert_eq!(resp.status, "ok", "actor creation should succeed");
-
-    // Record balances before tick
+    // Root (human) should NOT have gained energy from tick
     let root_before = kernel
         .handle_request(make_request(
             RequestType::Read,
             json!({ "kind": "actor_energy", "actor_id": "root" }),
         ))
         .await;
-    let root_balance_before = root_before.payload["energy_balance"].as_i64().unwrap();
+    let root_balance = root_before.payload["energy_balance"].as_i64().unwrap();
+    // Root starts with 1_000_000, minus energy spent on create action
+    assert!(
+        root_balance < 1_000_000,
+        "root should not gain energy from tick distribution"
+    );
+}
 
-    let agent_before = kernel
+/// PIP-001 §3: two agents with different shares receive proportional energy.
+/// Humans (root) do not participate in energy distribution.
+#[tokio::test]
+async fn energy_distribution_proportional_to_shares() {
+    let (kernel, _state) = setup_kernel().await;
+
+    // Create two agents with different energy_share values
+    let create_alpha = Action {
+        actor_id: "root".to_string(),
+        action_type: ActionType::Create,
+        target: "ledger/actor".to_string(),
+        payload: json!({
+            "actor_id": "agent-alpha",
+            "actor_type": "agent",
+            "purpose": "test-energy-a",
+            "energy_balance": 1000,
+            "energy_share": 100.0
+        }),
+        timestamp: None,
+    };
+    let create_beta = Action {
+        actor_id: "root".to_string(),
+        action_type: ActionType::Create,
+        target: "ledger/actor".to_string(),
+        payload: json!({
+            "actor_id": "agent-beta",
+            "actor_type": "agent",
+            "purpose": "test-energy-b",
+            "energy_balance": 1000,
+            "energy_share": 50.0
+        }),
+        timestamp: None,
+    };
+    let resp_a = kernel
+        .handle_request(make_request(
+            RequestType::Submit,
+            serde_json::to_value(create_alpha).unwrap(),
+        ))
+        .await;
+    assert_eq!(resp_a.status, "ok");
+    let resp_b = kernel
+        .handle_request(make_request(
+            RequestType::Submit,
+            serde_json::to_value(create_beta).unwrap(),
+        ))
+        .await;
+    assert_eq!(resp_b.status, "ok");
+
+    // Record balances before tick
+    let alpha_before = kernel
         .handle_request(make_request(
             RequestType::Read,
             json!({ "kind": "actor_energy", "actor_id": "agent-alpha" }),
         ))
         .await;
-    let agent_balance_before = agent_before.payload["energy_balance"].as_i64().unwrap();
+    let alpha_balance_before = alpha_before.payload["energy_balance"].as_i64().unwrap();
+
+    let beta_before = kernel
+        .handle_request(make_request(
+            RequestType::Read,
+            json!({ "kind": "actor_energy", "actor_id": "agent-beta" }),
+        ))
+        .await;
+    let beta_balance_before = beta_before.payload["energy_balance"].as_i64().unwrap();
 
     // Produce one tick with 150 energy units
-    // root share=100.0, agent share=50.0, total=150.0
-    // root gets 100/150 * 150 = 100, agent gets 50/150 * 150 = 50
+    // alpha share=100.0, beta share=50.0, total=150.0
+    // alpha gets 100/150 * 150 = 100, beta gets 50/150 * 150 = 50
     let config = StellarConfig {
         energy_per_tick: Some(150),
         ..Default::default()
@@ -160,25 +219,26 @@ async fn energy_distribution_proportional_to_shares() {
     );
 
     // Verify proportional distribution
-    let root_after = kernel
-        .handle_request(make_request(
-            RequestType::Read,
-            json!({ "kind": "actor_energy", "actor_id": "root" }),
-        ))
-        .await;
-    let agent_after = kernel
+    let alpha_after = kernel
         .handle_request(make_request(
             RequestType::Read,
             json!({ "kind": "actor_energy", "actor_id": "agent-alpha" }),
         ))
         .await;
+    let beta_after = kernel
+        .handle_request(make_request(
+            RequestType::Read,
+            json!({ "kind": "actor_energy", "actor_id": "agent-beta" }),
+        ))
+        .await;
 
-    let root_gained = root_after.payload["energy_balance"].as_i64().unwrap() - root_balance_before;
-    let agent_gained =
-        agent_after.payload["energy_balance"].as_i64().unwrap() - agent_balance_before;
+    let alpha_gained =
+        alpha_after.payload["energy_balance"].as_i64().unwrap() - alpha_balance_before;
+    let beta_gained =
+        beta_after.payload["energy_balance"].as_i64().unwrap() - beta_balance_before;
 
-    assert_eq!(root_gained, 100, "root (2/3 share) should get 100");
-    assert_eq!(agent_gained, 50, "agent (1/3 share) should get 50");
+    assert_eq!(alpha_gained, 100, "alpha (2/3 share) should get 100");
+    assert_eq!(beta_gained, 50, "beta (1/3 share) should get 50");
 }
 
 /// Energy neutrality (implementation detail): kernel energy neutrality — total produced == total distributed.
@@ -251,6 +311,113 @@ async fn energy_neutral_kernel() {
         result.total_energy_produced, 97,
         "kernel must distribute exactly energy_per_tick (no retention)"
     );
+}
+
+/// Humans do not receive tick energy — only agents participate in distribution.
+#[tokio::test]
+async fn humans_excluded_from_energy_distribution() {
+    let (kernel, _state) = setup_kernel().await;
+
+    let root_before = kernel
+        .handle_request(make_request(
+            RequestType::Read,
+            json!({ "kind": "actor_energy", "actor_id": "root" }),
+        ))
+        .await;
+    let root_balance_before = root_before.payload["energy_balance"].as_i64().unwrap();
+
+    // No agents exist — tick should produce energy but credit nobody
+    let config = StellarConfig {
+        energy_per_tick: Some(100),
+        ..Default::default()
+    };
+    let producer = EnergyProducer::new(
+        kernel.pool(),
+        kernel.actor_store().clone(),
+        kernel.energy_ledger().clone(),
+        config,
+    );
+
+    let result = producer
+        .produce_tick(100)
+        .await
+        .expect("tick should succeed");
+    assert_eq!(result.actors_credited, 0, "no agents to credit");
+    assert_eq!(result.total_energy_produced, 0, "no energy distributed");
+
+    // Root balance unchanged
+    let root_after = kernel
+        .handle_request(make_request(
+            RequestType::Read,
+            json!({ "kind": "actor_energy", "actor_id": "root" }),
+        ))
+        .await;
+    let root_balance_after = root_after.payload["energy_balance"].as_i64().unwrap();
+    assert_eq!(
+        root_balance_before, root_balance_after,
+        "root (human) must not receive tick energy"
+    );
+}
+
+/// update_energy_share lifecycle operation changes an agent's share.
+#[tokio::test]
+async fn update_energy_share_via_lifecycle() {
+    let (kernel, _state) = setup_kernel().await;
+
+    // Create an agent with initial share
+    let create = Action {
+        actor_id: "root".to_string(),
+        action_type: ActionType::Create,
+        target: "ledger/actor".to_string(),
+        payload: json!({
+            "actor_id": "agent-share",
+            "actor_type": "agent",
+            "purpose": "test-share-update",
+            "energy_balance": 1000,
+            "energy_share": 10.0
+        }),
+        timestamp: None,
+    };
+    let resp = kernel
+        .handle_request(make_request(
+            RequestType::Submit,
+            serde_json::to_value(create).unwrap(),
+        ))
+        .await;
+    assert_eq!(resp.status, "ok");
+
+    // Update energy_share via mutate lifecycle op
+    let update = Action {
+        actor_id: "root".to_string(),
+        action_type: ActionType::Mutate,
+        target: "actor/agent-share".to_string(),
+        payload: json!({
+            "op": "update_energy_share",
+            "energy_share": 75.0
+        }),
+        timestamp: None,
+    };
+    let resp = kernel
+        .handle_request(make_request(
+            RequestType::Submit,
+            serde_json::to_value(update).unwrap(),
+        ))
+        .await;
+    assert_eq!(resp.status, "ok", "update_energy_share should succeed");
+
+    // Verify the share was updated by running a tick
+    let config = StellarConfig {
+        energy_per_tick: Some(100),
+        ..Default::default()
+    };
+    let producer = EnergyProducer::new(
+        kernel.pool(),
+        kernel.actor_store().clone(),
+        kernel.energy_ledger().clone(),
+        config,
+    );
+    let result = producer.produce_tick(100).await.expect("tick should succeed");
+    assert_eq!(result.total_shares, 75.0, "share should reflect updated value");
 }
 
 /// PIP-001 §4: don't-starve constraint — energy_per_tick >= max basic operation cost.

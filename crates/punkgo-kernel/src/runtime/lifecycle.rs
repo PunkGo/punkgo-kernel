@@ -38,6 +38,10 @@ pub fn parse_lifecycle_op(
         "freeze" => LifecycleOp::Freeze { reason },
         "unfreeze" => LifecycleOp::Unfreeze,
         "terminate" => LifecycleOp::Terminate { reason },
+        "update_energy_share" => {
+            let energy_share = payload.get("energy_share")?.as_f64()?;
+            LifecycleOp::UpdateEnergyShare { energy_share }
+        }
         _ => return None,
     };
 
@@ -51,9 +55,8 @@ pub fn parse_lifecycle_op(
 ///
 /// | Initiator  | Target     | Allowed |
 /// |-----------|------------|---------|
-/// | human     | own agent  | yes     |
+/// | human     | own agent  | yes (lineage check)  |
 /// | agent     | any        | no      |
-/// | root      | any agent  | yes     |
 pub async fn validate_lifecycle_authorization(
     initiator: &ActorRecord,
     target: &ActorRecord,
@@ -64,11 +67,6 @@ pub async fn validate_lifecycle_authorization(
         return Err(KernelError::PolicyViolation(
             "cannot perform lifecycle operations on human actors".to_string(),
         ));
-    }
-
-    // Root can do anything
-    if initiator.actor_id == "root" {
-        return Ok(());
     }
 
     // PIP-001 §5: Agents cannot manage other agents.
@@ -144,6 +142,21 @@ pub async fn execute_unfreeze(
     Ok(())
 }
 
+/// Execute an update_energy_share operation: change the target's energy_share.
+pub async fn execute_update_energy_share(
+    actor_store: &ActorStore,
+    pool: &sqlx::SqlitePool,
+    target_id: &str,
+    energy_share: f64,
+) -> KernelResult<()> {
+    let mut tx = pool.begin().await?;
+    actor_store
+        .update_energy_share_in_tx(&mut tx, target_id, energy_share)
+        .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
 /// Check existence conditions for an actor (PIP-001 §7).
 ///
 /// Four conditions that must hold for an actor to exist:
@@ -175,6 +188,29 @@ pub async fn check_lineage_active(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn parse_update_energy_share_op() {
+        let (id, op) = parse_lifecycle_op(
+            "actor/agent-1",
+            &json!({"op": "update_energy_share", "energy_share": 42.5}),
+        )
+        .expect("should parse");
+        assert_eq!(id, "agent-1");
+        assert!(
+            matches!(op, LifecycleOp::UpdateEnergyShare { energy_share } if (energy_share - 42.5).abs() < f64::EPSILON)
+        );
+    }
+
+    #[test]
+    fn parse_update_energy_share_missing_value() {
+        let result =
+            parse_lifecycle_op("actor/agent-1", &json!({"op": "update_energy_share"}));
+        assert!(
+            result.is_none(),
+            "missing energy_share value should return None"
+        );
+    }
 
     #[test]
     fn parse_freeze_op() {

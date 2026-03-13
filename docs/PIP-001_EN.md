@@ -25,7 +25,7 @@ Whitepaper §2 gives E' = E - cost(A), but does not specify where E comes from o
 
 **§2 Continuous Production** — The kernel MUST produce energy continuously per tick, at a rate determined by stellar luminosity. Each production event MUST be written to history.
 
-**§3 Share Distribution** — Every Actor MUST have an energy share. Energy produced each tick is distributed proportionally by share. Shares are set at Actor creation time.
+**§3 Share Distribution** — Every Agent MUST have an energy share. Energy produced each tick is distributed proportionally by share among active agents. Humans do not participate in tick-based distribution — they receive a one-time initial balance. Shares are set at Actor creation time and can be updated via the `update_energy_share` lifecycle operation.
 
 **§4 Cost Calibration** — Base costs: observe=0, create=10, mutate=15, execute=25+IO. The production rate MUST be greater than or equal to the cost of any base operation, ensuring the Right to History is never defeated by energy design.
 

@@ -107,7 +107,7 @@ pub struct CreateActorSpec {
 // ---------------------------------------------------------------------------
 
 /// Phase 4a: Lifecycle operations that can be performed on actors.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum LifecycleOp {
     /// Freeze an actor — suspends all state-changing actions.
     Freeze { reason: Option<String> },
@@ -115,6 +115,8 @@ pub enum LifecycleOp {
     Unfreeze,
     /// Terminate — permanently removes an agent (creates orphans).
     Terminate { reason: Option<String> },
+    /// Update an actor's energy_share for tick-based distribution.
+    UpdateEnergyShare { energy_share: f64 },
 }
 
 // ---------------------------------------------------------------------------

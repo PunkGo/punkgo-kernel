@@ -141,6 +141,40 @@ impl ActorStore {
         Ok(())
     }
 
+    /// Update an actor's energy_share within an existing transaction.
+    ///
+    /// This allows adjusting how much tick-based energy an actor receives
+    /// after creation, without needing direct database access.
+    /// Only meaningful for agents (humans do not participate in energy distribution).
+    pub async fn update_energy_share_in_tx(
+        &self,
+        tx: &mut Transaction<'_, Sqlite>,
+        actor_id: &str,
+        energy_share: f64,
+    ) -> KernelResult<()> {
+        if !energy_share.is_finite() || energy_share < 0.0 {
+            return Err(KernelError::PolicyViolation(
+                "energy_share must be a finite non-negative number".to_string(),
+            ));
+        }
+
+        let result = sqlx::query(
+            r#"
+            UPDATE actors SET energy_share = ?1, updated_at = ?2 WHERE actor_id = ?3
+            "#,
+        )
+        .bind(energy_share)
+        .bind(now_millis_string())
+        .bind(actor_id)
+        .execute(&mut **tx)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(KernelError::ActorNotFound(actor_id.to_string()));
+        }
+        Ok(())
+    }
+
     /// Get the next sequence number for a given creator + purpose pair.
     /// Used for derived identity (agent ID generation).
     pub async fn next_sequence(&self, creator_id: &str, purpose: &str) -> KernelResult<i64> {
@@ -154,14 +188,18 @@ impl ActorStore {
         Ok(count + 1)
     }
 
-    /// List all active actors with energy_share > 0.
+    /// List all active agents with energy_share > 0.
     /// Returns (actor_id, energy_share) pairs for energy production distribution (PIP-001 §3).
+    ///
+    /// Only agents participate in tick-based energy distribution. Humans (including root)
+    /// receive a one-time initial energy balance at creation — they perform infrequent
+    /// management operations and do not need ongoing energy production.
     pub async fn list_active_with_shares(&self) -> KernelResult<Vec<(String, f64)>> {
         let rows = sqlx::query(
             r#"
             SELECT actor_id, energy_share
             FROM actors
-            WHERE status = 'active' AND energy_share > 0.0
+            WHERE status = 'active' AND energy_share > 0.0 AND actor_type = 'agent'
             "#,
         )
         .fetch_all(&self.pool)

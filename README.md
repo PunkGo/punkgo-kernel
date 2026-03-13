@@ -54,7 +54,7 @@ Every action goes through a **7-step pipeline**:
 
 ### Energy System
 
-Energy is produced continuously, anchored to the machine's hardware compute power (INT8 TOPS). Each tick, energy is distributed proportionally among active actors based on their shares. The kernel itself holds no energy (energy neutrality).
+Energy is produced continuously, anchored to the machine's hardware compute power (INT8 TOPS). Each tick, energy is distributed proportionally among active **agents** based on their shares. Humans (including root) receive a one-time initial balance but do not participate in tick-based distribution. The kernel itself holds no energy (energy neutrality).
 
 ### Actor Model
 

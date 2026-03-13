@@ -26,7 +26,11 @@ impl TestStateDir {
     }
 
     pub fn ipc_endpoint(&self) -> String {
-        format!("punkgo-test-{}", Uuid::new_v4())
+        if cfg!(windows) {
+            format!(r"\\.\pipe\punkgo-test-{}", Uuid::new_v4())
+        } else {
+            format!("punkgo-test-{}", Uuid::new_v4())
+        }
     }
 }
 

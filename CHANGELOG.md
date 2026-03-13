@@ -5,6 +5,26 @@ All notable changes to PunkGo Kernel will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-03-13
+
+### Fixed
+
+- **Energy starvation bug** — agents received 0 energy per tick due to `floor()` rounding when root's `energy_share` dominated the total. Distribution now targets agents only (`actor_type = 'agent'`); humans receive one-time initial balance
+- **Windows IPC "Access Denied"** — default endpoint changed to file-path pipe (`\\.\pipe\punkgo-kernel`) to avoid `GenericNamespaced` permission issues
+- **NaN/Infinity validation** — `update_energy_share` rejects non-finite values that would poison tick distribution
+
+### Added
+
+- **`update_energy_share` lifecycle operation** — runtime adjustment of an agent's energy share via `mutate` action
+- **PID lockfile** (`daemon.pid`) — daemon startup detects and prompts to kill existing instances
+- **`PUNKGO_IPC_ENDPOINT` env var** — override the default IPC endpoint
+
+### Changed
+
+- **Root is genesis-only** — removed hardcoded root exemption from lifecycle authorization; root now follows lineage-based checks like any human
+- **Root default `energy_share`** — 100.0 → 0.0 for new databases (existing databases unaffected due to `ON CONFLICT DO NOTHING`)
+- **PIP-001 §3** — clarified that share distribution applies to agents only
+
 ## [0.2.1] - 2026-02-22
 
 ### Fixed

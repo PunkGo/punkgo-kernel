@@ -85,7 +85,7 @@ impl EnergyProducer {
 
     /// Execute a single production tick. Public for testing.
     pub async fn produce_tick(&self, energy_per_tick: i64) -> Result<TickResult, String> {
-        // 1. Query all active actors with energy_share > 0
+        // 1. Query all active agents with energy_share > 0 (humans excluded)
         let actors = self
             .actor_store
             .list_active_with_shares()

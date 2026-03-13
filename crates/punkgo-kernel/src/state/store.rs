@@ -260,6 +260,9 @@ impl StateStore {
         .await?;
 
         // Phase 1: seed root as human actor with full wildcard boundary (PIP-001 §10).
+        // Root is a genesis actor — it receives a one-time energy balance but does not
+        // participate in tick-based energy distribution (energy_share = 0.0).
+        // Only agents receive ongoing energy production.
         sqlx::query(
             r#"
             INSERT INTO actors (
@@ -268,7 +271,7 @@ impl StateStore {
             )
             VALUES ('root', 'human', NULL, '[]', NULL, 'active',
                     '[{"target":"**","actions":["create","mutate","execute"]}]',
-                    100.0, 'none', ?1, ?1)
+                    0.0, 'none', ?1, ?1)
             ON CONFLICT(actor_id) DO NOTHING
             "#,
         )

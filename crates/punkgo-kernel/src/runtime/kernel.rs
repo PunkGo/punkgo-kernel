@@ -35,9 +35,11 @@ impl Default for KernelConfig {
         let state_dir = std::env::var("PUNKGO_STATE_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| default_state_dir());
+        let ipc_endpoint = std::env::var("PUNKGO_IPC_ENDPOINT")
+            .unwrap_or_else(|_| default_ipc_endpoint());
         Self {
             state_dir,
-            ipc_endpoint: "punkgo-kernel".to_string(),
+            ipc_endpoint,
         }
     }
 }
@@ -45,6 +47,19 @@ impl Default for KernelConfig {
 /// Default state directory: ~/.punkgo/state
 ///
 /// Falls back to `./state` if home directory cannot be determined.
+/// Default IPC endpoint.
+///
+/// On Windows, uses a file-path named pipe (`\\.\pipe\punkgo-kernel`) because
+/// the `GenericNamespaced` namespace can hit "Access Denied" depending on
+/// Windows security policy. On Unix, uses a simple namespace name.
+fn default_ipc_endpoint() -> String {
+    if cfg!(windows) {
+        r"\\.\pipe\punkgo-kernel".to_string()
+    } else {
+        "punkgo-kernel".to_string()
+    }
+}
+
 fn default_state_dir() -> PathBuf {
     if let Some(home) = home_dir() {
         return home.join(".punkgo").join("state");
@@ -638,6 +653,27 @@ impl Kernel {
                         }
                         Err(err) => {
                             warn!(error = %err, "lifecycle: terminate failed (event already committed)");
+                        }
+                    }
+                }
+                punkgo_core::actor::LifecycleOp::UpdateEnergyShare { energy_share } => {
+                    match lifecycle::execute_update_energy_share(
+                        &self.actor_store,
+                        &pool,
+                        target_actor_id,
+                        *energy_share,
+                    )
+                    .await
+                    {
+                        Ok(()) => {
+                            info!(
+                                target = %target_actor_id,
+                                energy_share,
+                                "lifecycle: energy_share updated"
+                            );
+                        }
+                        Err(err) => {
+                            warn!(error = %err, "lifecycle: update_energy_share failed (event already committed)");
                         }
                     }
                 }
