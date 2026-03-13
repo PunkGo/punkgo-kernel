@@ -35,8 +35,8 @@ impl Default for KernelConfig {
         let state_dir = std::env::var("PUNKGO_STATE_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| default_state_dir());
-        let ipc_endpoint = std::env::var("PUNKGO_IPC_ENDPOINT")
-            .unwrap_or_else(|_| default_ipc_endpoint());
+        let ipc_endpoint =
+            std::env::var("PUNKGO_IPC_ENDPOINT").unwrap_or_else(|_| default_ipc_endpoint());
         Self {
             state_dir,
             ipc_endpoint,

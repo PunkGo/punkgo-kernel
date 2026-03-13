@@ -234,8 +234,7 @@ async fn energy_distribution_proportional_to_shares() {
 
     let alpha_gained =
         alpha_after.payload["energy_balance"].as_i64().unwrap() - alpha_balance_before;
-    let beta_gained =
-        beta_after.payload["energy_balance"].as_i64().unwrap() - beta_balance_before;
+    let beta_gained = beta_after.payload["energy_balance"].as_i64().unwrap() - beta_balance_before;
 
     assert_eq!(alpha_gained, 100, "alpha (2/3 share) should get 100");
     assert_eq!(beta_gained, 50, "beta (1/3 share) should get 50");
@@ -416,8 +415,14 @@ async fn update_energy_share_via_lifecycle() {
         kernel.energy_ledger().clone(),
         config,
     );
-    let result = producer.produce_tick(100).await.expect("tick should succeed");
-    assert_eq!(result.total_shares, 75.0, "share should reflect updated value");
+    let result = producer
+        .produce_tick(100)
+        .await
+        .expect("tick should succeed");
+    assert_eq!(
+        result.total_shares, 75.0,
+        "share should reflect updated value"
+    );
 }
 
 /// PIP-001 §4: don't-starve constraint — energy_per_tick >= max basic operation cost.

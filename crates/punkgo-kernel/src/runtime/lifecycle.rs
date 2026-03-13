@@ -204,8 +204,7 @@ mod tests {
 
     #[test]
     fn parse_update_energy_share_missing_value() {
-        let result =
-            parse_lifecycle_op("actor/agent-1", &json!({"op": "update_energy_share"}));
+        let result = parse_lifecycle_op("actor/agent-1", &json!({"op": "update_energy_share"}));
         assert!(
             result.is_none(),
             "missing energy_share value should return None"

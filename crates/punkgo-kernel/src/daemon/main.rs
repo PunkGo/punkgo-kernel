@@ -10,7 +10,6 @@
 //! 3. Listens for IPC connections and dispatches requests to [`Kernel::handle_request`]
 //! 4. On CTRL-C: signals the energy producer to stop, aborts the IPC server, and exits
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Result;
