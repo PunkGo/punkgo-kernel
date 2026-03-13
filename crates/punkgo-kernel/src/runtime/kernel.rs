@@ -47,16 +47,25 @@ impl Default for KernelConfig {
 /// Default state directory: ~/.punkgo/state
 ///
 /// Falls back to `./state` if home directory cannot be determined.
-/// Default IPC endpoint.
+/// Default IPC endpoint — unique per PID.
 ///
-/// On Windows, uses a file-path named pipe (`\\.\pipe\punkgo-kernel`) because
-/// the `GenericNamespaced` namespace can hit "Access Denied" depending on
-/// Windows security policy. On Unix, uses a simple namespace name.
+/// Each daemon instance gets its own socket/pipe keyed by PID, enabling
+/// clean recovery after crashes (stale sockets are cleaned up by new daemons).
+///
+/// - Windows: `\\.\pipe\punkgo-kernel-{pid}` (named pipe)
+/// - Unix: `{state_dir}/daemon-{pid}.sock` (Unix domain socket)
 fn default_ipc_endpoint() -> String {
+    let pid = std::process::id();
     if cfg!(windows) {
-        r"\\.\pipe\punkgo-kernel".to_string()
+        format!(r"\\.\pipe\punkgo-kernel-{pid}")
     } else {
-        "punkgo-kernel".to_string()
+        let state_dir = std::env::var("PUNKGO_STATE_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| default_state_dir());
+        state_dir
+            .join(format!("daemon-{pid}.sock"))
+            .to_string_lossy()
+            .into_owned()
     }
 }
 

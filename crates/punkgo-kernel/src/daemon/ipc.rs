@@ -4,8 +4,9 @@ use interprocess::local_socket::{
     GenericFilePath, GenericNamespaced, ListenerOptions, Name, ToFsName, ToNsName,
     traits::tokio::Listener as _,
 };
-use punkgo_core::protocol::{RequestEnvelope, ResponseEnvelope};
+use punkgo_core::protocol::{RequestEnvelope, RequestType, ResponseEnvelope};
 use punkgo_kernel::Kernel;
+use serde_json::json;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tracing::{error, info, warn};
 
@@ -17,7 +18,11 @@ fn endpoint_to_name(endpoint: &str) -> std::io::Result<Name<'_>> {
     }
 }
 
-pub async fn run_ipc_server(kernel: Arc<Kernel>, endpoint: &str) -> std::io::Result<()> {
+pub async fn run_ipc_server(
+    kernel: Arc<Kernel>,
+    endpoint: &str,
+    shutdown_tx: tokio::sync::watch::Sender<bool>,
+) -> std::io::Result<()> {
     let name = endpoint_to_name(endpoint)?;
     let listener = ListenerOptions::new().name(name).create_tokio()?;
     info!(endpoint = endpoint, "IPC server listening");
@@ -25,15 +30,20 @@ pub async fn run_ipc_server(kernel: Arc<Kernel>, endpoint: &str) -> std::io::Res
     loop {
         let conn = listener.accept().await?;
         let kernel = Arc::clone(&kernel);
+        let shutdown_tx = shutdown_tx.clone();
         tokio::spawn(async move {
-            if let Err(err) = handle_connection(conn, kernel).await {
+            if let Err(err) = handle_connection(conn, kernel, shutdown_tx).await {
                 warn!(error = %err, "IPC client disconnected with error");
             }
         });
     }
 }
 
-async fn handle_connection<S>(stream: S, kernel: Arc<Kernel>) -> std::io::Result<()>
+async fn handle_connection<S>(
+    stream: S,
+    kernel: Arc<Kernel>,
+    shutdown_tx: tokio::sync::watch::Sender<bool>,
+) -> std::io::Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
@@ -57,6 +67,25 @@ where
             }
         };
         info!(request_id = %request.request_id, "ipc request received");
+
+        // Check for shutdown command before dispatching to kernel.
+        if matches!(request.request_type, RequestType::Read) {
+            if let Some(kind) = request
+                .payload
+                .get("kind")
+                .and_then(serde_json::Value::as_str)
+            {
+                if kind == "shutdown" {
+                    let response = ResponseEnvelope::ok(
+                        request.request_id.clone(),
+                        json!({"message": "shutting down"}),
+                    );
+                    write_response(&mut writer, &response).await?;
+                    let _ = shutdown_tx.send(true);
+                    return Ok(());
+                }
+            }
+        }
 
         let response = kernel.handle_request(request).await;
         if let Err(err) = write_response(&mut writer, &response).await {

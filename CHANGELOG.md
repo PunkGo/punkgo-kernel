@@ -5,6 +5,21 @@ All notable changes to PunkGo Kernel will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-03-13
+
+### Changed
+
+- **IPC lifecycle redesign** — daemon now uses per-PID socket/pipe names (`daemon-{pid}.sock` / `\\.\pipe\punkgo-kernel-{pid}`), eliminating stale socket/pipe issues after crashes on all platforms
+- **Single-instance guard** — replaced PID lockfile with `flock` on `daemon.addr` (auto-released on process death by OS)
+- **Service discovery** — daemon writes `daemon.addr` file with PID + endpoint; clients read it to find the daemon
+- **`--replace` flag** — gracefully stops old daemon via IPC shutdown command, then takes over
+- **IPC shutdown command** — `kind: "shutdown"` request triggers graceful daemon shutdown
+
+### Removed
+
+- PID lockfile (`daemon.pid`) — superseded by flock on `daemon.addr`
+- Interactive "Kill it? [y/N]" prompt — replaced by `--replace` flag
+
 ## [0.3.0] - 2026-03-13
 
 ### Fixed
