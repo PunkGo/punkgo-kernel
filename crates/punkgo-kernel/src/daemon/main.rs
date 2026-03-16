@@ -5,14 +5,18 @@
 //!
 //! # Lifecycle
 //!
-//! 1. Acquires exclusive flock on `daemon.addr` (single-instance guard)
+//! 1. Acquires exclusive flock on `daemon.lock` (single-instance guard)
 //! 2. Writes `pid=<PID>\naddr=<endpoint>` to `daemon.addr` for service discovery
 //! 3. Bootstraps the kernel (SQLite state, root actor)
 //! 4. Starts the [`EnergyProducer`] background task
 //! 5. Listens for IPC connections and dispatches requests to [`Kernel::handle_request`]
 //! 6. On shutdown (CTRL-C or IPC shutdown command): cleans up socket, truncates `daemon.addr`
+//!
+//! **Note**: flock is on `daemon.lock` (not `daemon.addr`) because Windows exclusive
+//! locks prevent other processes from reading the locked file. Separating lock and
+//! info allows jack to read `daemon.addr` for endpoint discovery on all platforms.
 
-use std::io::{Seek, Write};
+use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -38,23 +42,27 @@ async fn main() -> Result<()> {
     let config = KernelConfig::default();
     std::fs::create_dir_all(&config.state_dir)?;
 
-    // 2. Open daemon.addr and try flock for single-instance guard.
-    let addr_path = config.state_dir.join("daemon.addr");
-    let mut addr_file = std::fs::OpenOptions::new()
+    // 2. Open daemon.lock for single-instance guard.
+    //    Lock is on a separate file from daemon.addr so that jack can always
+    //    read daemon.addr for endpoint discovery (Windows mandatory locks block reads).
+    let lock_path = config.state_dir.join("daemon.lock");
+    let lock_file = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
         .truncate(false)
-        .open(&addr_path)?;
+        .open(&lock_path)?;
 
-    match addr_file.try_lock_exclusive() {
+    let addr_path = config.state_dir.join("daemon.addr");
+
+    match lock_file.try_lock_exclusive() {
         Ok(()) => {
             // Got lock — clean up old daemon-*.sock files from crashed instances.
             cleanup_old_sockets(&config.state_dir);
         }
         Err(_) => {
             if !replace {
-                // Read existing daemon.addr to show PID.
+                // Read existing daemon.addr to show PID (readable even while lock is held).
                 let content = std::fs::read_to_string(&addr_path).unwrap_or_default();
                 let old_pid = parse_pid(&content).unwrap_or(0);
                 eprintln!("punkgo-kerneld is already running (PID {old_pid}).");
@@ -64,21 +72,26 @@ async fn main() -> Result<()> {
             // --replace: gracefully stop old daemon, then take over.
             replace_old_daemon(&addr_path)?;
             // Blocking wait for lock (old daemon releasing).
-            addr_file.lock_exclusive()?;
+            lock_file.lock_exclusive()?;
             cleanup_old_sockets(&config.state_dir);
         }
     }
 
-    // 3. Write our info to daemon.addr (truncate first to clear stale data).
-    addr_file.set_len(0)?;
-    addr_file.seek(std::io::SeekFrom::Start(0))?;
-    write!(
-        addr_file,
-        "pid={}\naddr={}",
-        std::process::id(),
-        config.ipc_endpoint
-    )?;
-    addr_file.sync_all()?;
+    // 3. Write our info to daemon.addr (separate file, no lock — always readable).
+    {
+        let mut addr_file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&addr_path)?;
+        write!(
+            addr_file,
+            "pid={}\naddr={}",
+            std::process::id(),
+            config.ipc_endpoint
+        )?;
+        addr_file.sync_all()?;
+    }
 
     // 4. Bootstrap kernel.
     let kernel = Arc::new(Kernel::bootstrap(&config).await?);
@@ -139,9 +152,9 @@ async fn main() -> Result<()> {
     // 7. Cleanup on exit.
     // Remove our per-PID socket file.
     let _ = std::fs::remove_file(&config.ipc_endpoint);
-    // Truncate daemon.addr (do NOT delete — preserves inode for flock stability).
-    let _ = addr_file.set_len(0);
-    // flock released automatically when addr_file is dropped.
+    // Truncate daemon.addr (do NOT delete — stale content is harmless, lock is the guard).
+    let _ = std::fs::write(&addr_path, "");
+    // flock on daemon.lock released automatically when lock_file is dropped.
     drop(kernel);
     info!("daemon exited cleanly");
     Ok(())

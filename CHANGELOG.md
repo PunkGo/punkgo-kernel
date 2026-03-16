@@ -5,6 +5,12 @@ All notable changes to PunkGo Kernel will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-03-17
+
+### Fixed
+
+- **Windows daemon.addr unreadable** — exclusive flock on `daemon.addr` blocked other processes from reading it on Windows (mandatory locks), causing jack to fall back to a stale default endpoint. Fix: flock moved to separate `daemon.lock` file; `daemon.addr` is now always readable for endpoint discovery
+
 ## [0.5.0] - 2026-03-16
 
 ### Added

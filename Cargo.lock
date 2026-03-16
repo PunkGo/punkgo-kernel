@@ -1006,7 +1006,7 @@ dependencies = [
 
 [[package]]
 name = "punkgo-cli"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "interprocess",
@@ -1016,7 +1016,7 @@ dependencies = [
 
 [[package]]
 name = "punkgo-core"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "globset",
  "serde",
@@ -1029,7 +1029,7 @@ dependencies = [
 
 [[package]]
 name = "punkgo-kernel"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "async-trait",
