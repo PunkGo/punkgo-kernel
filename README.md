@@ -52,7 +52,8 @@ The receipt contains an event ID, log index, and cryptographic hash. Third parti
 
 | Version | What changed | Spec |
 |---------|-------------|------|
-| **v0.5.0** | Ed25519 checkpoint signing, trust layer architecture | [PIP-003](docs/PIP-003_EN.md) |
+| **v0.5.1** | Windows daemon.addr flock fix (separate lock from info) | [CHANGELOG](CHANGELOG.md) |
+| v0.5.0 | Ed25519 checkpoint signing, trust layer architecture | [PIP-003](docs/PIP-003_EN.md) |
 | v0.4.0 | Per-PID IPC, single-instance guard, `--replace` | [CHANGELOG](CHANGELOG.md) |
 | v0.3.0 | Energy starvation fix, Windows IPC fix | [CHANGELOG](CHANGELOG.md) |
 | v0.2.0 | Execute submission — kernel commits, agent executes | [PIP-002](docs/PIP-002_EN.md) |
