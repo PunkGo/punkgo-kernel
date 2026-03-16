@@ -160,6 +160,21 @@ impl StateStore {
         .execute(pool)
         .await?;
 
+        // Phase 1.5: TSA timestamp tokens — external time anchoring for checkpoints.
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS audit_tsa_tokens (
+                tree_size INTEGER NOT NULL PRIMARY KEY,
+                root_hash TEXT NOT NULL,
+                tsa_response BLOB NOT NULL,
+                tsa_url TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            "#,
+        )
+        .execute(pool)
+        .await?;
+
         // Phase 1: actors table — explicit actor records with type, lineage, boundary.
         sqlx::query(
             r#"

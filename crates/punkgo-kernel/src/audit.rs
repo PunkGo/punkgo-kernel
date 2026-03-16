@@ -20,6 +20,8 @@ use thiserror::Error;
 use tlog_tiles::{checkpoint::Checkpoint, tlog};
 use tracing::debug;
 
+use crate::signing::SigningKey;
+
 #[derive(Debug, Error)]
 pub enum AuditError {
     #[error("database error: {0}")]
@@ -41,7 +43,7 @@ pub enum AuditError {
 pub struct AuditCheckpoint {
     pub tree_size: i64,
     pub root_hash: String,
-    /// C2SP tlog-checkpoint canonical text (unsigned in dev mode).
+    /// C2SP tlog-checkpoint canonical text, Ed25519-signed.
     pub checkpoint_text: String,
     pub created_at: String,
 }
@@ -64,13 +66,19 @@ impl tlog::HashReader for InMemHashReader {
 pub struct AuditLog {
     pool: SqlitePool,
     origin: String,
+    signing_key: Option<SigningKey>,
 }
 
 impl AuditLog {
-    pub fn new(pool: SqlitePool, origin: impl Into<String>) -> Self {
+    pub fn new(
+        pool: SqlitePool,
+        origin: impl Into<String>,
+        signing_key: Option<SigningKey>,
+    ) -> Self {
         Self {
             pool,
             origin: origin.into(),
+            signing_key,
         }
     }
 
@@ -141,7 +149,14 @@ impl AuditLog {
         let root = tlog::tree_hash(tree_size, &reader)?;
         let root_hex = hash_to_hex(&root);
 
-        let cp = Checkpoint::new(&self.origin, tree_size, root, "")
+        // Build checkpoint body (unsigned), then sign if key is available.
+        let extension = if let Some(ref sk) = self.signing_key {
+            let body = format!("{}\n{}\n{}\n", self.origin, tree_size, root);
+            sk.sign_checkpoint(body.as_bytes())
+        } else {
+            String::new()
+        };
+        let cp = Checkpoint::new(&self.origin, tree_size, root, &extension)
             .map_err(|_| AuditError::Checkpoint)?;
         let cp_text = String::from_utf8(cp.to_bytes()).unwrap_or_default();
 

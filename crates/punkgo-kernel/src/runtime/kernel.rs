@@ -152,6 +152,7 @@ pub struct Kernel {
     actor_store: ActorStore,
     envelope_store: EnvelopeStore,
     stellar_config: StellarConfig,
+    signing_key: crate::signing::SigningKey,
 }
 
 impl Kernel {
@@ -162,7 +163,16 @@ impl Kernel {
         let state_store = StateStore::bootstrap(&config.state_dir).await?;
         let energy_ledger = EnergyLedger::new(state_store.pool());
         let event_log = EventLog::new(state_store.pool());
-        let audit_log = AuditLog::new(state_store.pool(), "punkgo/kernel");
+        // Load or generate Ed25519 signing key for checkpoint authentication.
+        let signing_key_path = config.state_dir.join("signing_key");
+        let signing_key = crate::signing::SigningKey::load_or_generate(&signing_key_path)
+            .map_err(|e| KernelError::Audit(format!("signing key: {e}")))?;
+        tracing::info!(pubkey = %signing_key.public_key_hex(), "checkpoint signing key loaded");
+        let audit_log = AuditLog::new(
+            state_store.pool(),
+            "punkgo/kernel",
+            Some(signing_key.clone()),
+        );
         let actor_store = ActorStore::new(state_store.pool());
         let envelope_store = EnvelopeStore::new(state_store.pool());
 
@@ -184,6 +194,7 @@ impl Kernel {
             actor_store,
             envelope_store,
             stellar_config,
+            signing_key,
         })
     }
 
@@ -1003,6 +1014,11 @@ impl Kernel {
                     .await?;
                 Ok(json!({ "holds": holds }))
             }
+            // Phase 1: signing public key — identity binding.
+            "signing_pubkey" => Ok(json!({
+                "pubkey_hex": self.signing_key.public_key_hex(),
+                "algorithm": "ed25519"
+            })),
             other => Err(KernelError::InvalidRequest(format!(
                 "unsupported read query kind: {other}"
             ))),

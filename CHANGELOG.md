@@ -5,6 +5,20 @@ All notable changes to PunkGo Kernel will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-03-16
+
+### Added
+
+- **PIP-003: Ed25519 checkpoint signing** — every Merkle checkpoint is now signed with a locally generated Ed25519 keypair. Signature format: `sig/ed25519:<pubkey_hex>:<sig_hex>` in the C2SP checkpoint extension line
+- **Signing key auto-generation** — keypair created on first boot at `{state_dir}/signing_key`, loaded on subsequent starts
+- **`signing_pubkey` read kind** — IPC clients can query the kernel's Ed25519 public key for offline verification
+- **`audit_tsa_tokens` table** — reserved schema for jack-side RFC 3161 TSA timestamp storage (forward-compatible, kernel does not make HTTP calls)
+- **`verify_checkpoint_signature()` and `parse_sig_extension()`** — public functions for third-party offline signature verification
+
+### Dependencies
+
+- Added: `ed25519-dalek` v2 (with `rand_core`), `rand` v0.8, `hex` v0.4
+
 ## [0.4.0] - 2026-03-13
 
 ### Changed

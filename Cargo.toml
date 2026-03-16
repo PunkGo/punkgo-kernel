@@ -7,7 +7,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
 authors = ["Felix <feijiu@punkgo.ai>"]
 license = "MIT"
@@ -33,3 +33,6 @@ tempfile = "3.16"
 uuid = { version = "1.21.0", features = ["v4", "serde"] }
 interprocess = { version = "2.4", features = ["tokio"] }
 fs2 = "0.4"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand = "0.8"
+hex = "0.4"

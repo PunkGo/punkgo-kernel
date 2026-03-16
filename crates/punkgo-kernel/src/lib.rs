@@ -12,6 +12,7 @@
 
 pub mod audit;
 pub mod runtime;
+pub mod signing;
 pub mod state;
 
 pub mod testkit;

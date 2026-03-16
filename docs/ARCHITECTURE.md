@@ -1,6 +1,6 @@
 # PunkGo Kernel Architecture
 
-> Version: 0.2.2
+> Version: 0.5.0
 
 ## Overview
 
@@ -14,15 +14,13 @@ The kernel is a **committer, not an executor** — it validates, records, and pr
 punkgo-kernel/
   bins/
     punkgo-cli/          CLI client (IPC over Unix socket / Windows named pipe)
-    punkgo-kerneld/      Kernel daemon (tokio + SQLite)
   crates/
-    punkgo-core/         Core types: Actor, Action, Energy, Boundary, Consent (Envelope/Hold)
-    punkgo-runtime/      Kernel: 7-step submit pipeline, lifecycle, energy producer
-    punkgo-state/        Persistence: ActorStore, EnergyLedger, EventLog, EnvelopeStore, BlobStore
-    punkgo-audit/        Audit: Merkle tree (tlog), inclusion/consistency proofs, C2SP checkpoints
-    punkgo-testkit/      Test utilities: temp state dirs, request builders
+    punkgo-core/         Core types: Actor, Action, Energy, Boundary, Consent, Protocol
+    punkgo-kernel/       Kernel crate: runtime (7-step pipeline, energy producer),
+                         state (SQLite persistence), audit (Merkle tree, C2SP checkpoints),
+                         signing (Ed25519), daemon (IPC server, lifecycle)
   specs/
-    kernel-tools.json    MCP-compatible tool definitions (machine-readable, no running kernel required)
+    kernel-tools.json    MCP-compatible tool definitions (machine-readable)
 ```
 
 ## Submit Pipeline
@@ -139,6 +137,7 @@ Every committed event enters a Merkle tree (Google tlog / RFC 6962):
 - **Inclusion proof**: Prove a specific event exists in the tree
 - **Consistency proof**: Prove the tree is append-only between two sizes
 - **C2SP checkpoints**: Signed tree heads for independent third-party verification
+- **Ed25519 signing**: Every checkpoint is signed with a locally generated keypair. Signature is embedded as a C2SP extension line: `sig/ed25519:<pubkey_hex>:<sig_hex>`
 
 ## IPC Transport
 
