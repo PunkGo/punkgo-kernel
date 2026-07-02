@@ -35,6 +35,7 @@ Pair with [punkgo-jack](https://github.com/PunkGo/punkgo-jack) for AI tool integ
 ```bash
 cargo install punkgo-jack
 punkgo-jack setup claude-code  # install hooks into Claude Code
+punkgo-jack setup codex        # record Codex CLI sessions too
 # every tool call now gets a cryptographic receipt
 ```
 
@@ -61,7 +62,7 @@ The receipt contains an event ID, log index, and cryptographic hash. Third parti
 
 ## Ecosystem
 
-- **[punkgo-jack](https://github.com/PunkGo/punkgo-jack)** — AI tool hook adapter (Claude Code, Cursor). Every tool call gets a receipt + optional RFC 3161 TSA timestamp
+- **[punkgo-jack](https://github.com/PunkGo/punkgo-jack)** — AI tool hook adapter (Claude Code, Codex CLI, Cursor). Every tool call gets a receipt + optional RFC 3161 TSA timestamp; Codex sessions are recorded with full (redacted) I/O
 - **[punkgo-watchdog](https://github.com/PunkGo/punkgo-watchdog)** — real-time kernel monitor with terminal dashboard
 
 ## Documentation
